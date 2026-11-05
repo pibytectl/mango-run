@@ -110,6 +110,9 @@ export const HOWTO = [
   { k: 'الموبايل', ar: '◀ ▶ تحت إيدك الشمال للمشي، واسحب صباعك لتحت عليهم (أو دوس ▼) عشان توطّي. ⤒ تحت إيدك اليمين للنط (دوس أطول تنط أعلى)، وزرار النبّوت جنبه.', en: 'Left thumb: move pad (swipe down on it, or tap the small down button, to duck). Right thumb: jump (hold for higher), staff button beside it.' },
   { k: 'الكيبورد', ar: 'الأسهم أو WASD للمشي والتوطية، Space للنط، X أو J للنبّوت، Esc للاستراحة.', en: 'Arrows or WASD, Space to jump, X or J for the staff, Esc to pause.' },
   { k: 'النجوم', ar: 'نجمة لما توصل، اتنين لو معاك ٩ مانجايات أو أكتر، وتلاتة لو الاتناشر كاملين.', en: 'One star for arriving, two for 9+ mangoes, three for all 12.' },
+  { k: '3D', ar: 'موبايل: إبهامك الشمال في أي حتة = عصا التحريك (زقّها للآخر تجري)، واسحب على اليمين تلف الكاميرا. الأزرار: النبّوت، النط، الزحلقة/التفادي، والصدّ.', en: 'Phone: left thumb anywhere is the stick (push it all the way to sprint), drag on the right to look. Buttons: staff, jump, slide/dodge, block.' },
+  { k: '3D', ar: 'كيبورد: WASD، الماوس للكاميرا، Shift جري، Space نط، J أو كليك نبّوت، K أو كليك يمين صدّ، Ctrl أو C زحلقة/تفادي، Q تثبيت على الخصم.', en: 'Keys: WASD, mouse look, Shift sprint, Space jump, J/click staff, K/right-click block, Ctrl/C slide or dodge, Q lock-on.' },
+  { k: 'نجوم 3D', ar: 'نجمة لـ١٠ مانجايات أو أكتر، نجمة لو وصلت والشمس لسه فاضل لها دقيقة، ونجمة لو كسبت خناقة الحارة من أول مرة.', en: 'One star each: 10+ mangoes, a minute of sun to spare, the alley fight won on the first try.' },
 ];
 
 const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';

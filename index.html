@@ -18,6 +18,16 @@
 <div id="ui">
   <div id="world-ui"></div>
 
+  <div id="c3d" class="hidden" dir="ltr">
+    <div id="stick3d" class="hidden"><div id="stick3d-knob"></div></div>
+    <div class="b3 b-block" data-b="block" aria-label="block"><svg viewBox="0 0 40 40"><path d="M6 13h28M9 13v-3M31 13v-3" stroke="currentColor" stroke-width="4" stroke-linecap="round" fill="none"/><path d="M20 18v14" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity=".55"/></svg></div>
+    <div class="b3 b-slide" data-b="slide" aria-label="slide"><svg viewBox="0 0 40 40"><path d="M8 26c8 0 10-12 24-12M24 9l8 5-6 7" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M6 32h28" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity=".6"/></svg></div>
+    <div class="b3 b-jump" data-b="jump" aria-label="jump"><svg viewBox="0 0 40 40"><path d="M20 31V10M11 18l9-9 9 9" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
+    <div class="b3 b-atk" data-b="attack" aria-label="staff"><i class="ico ico-staff"></i><svg class="boost" viewBox="0 0 40 40"><path d="M10 12l10 8-10 8M20 12l10 8-10 8" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></div>
+  </div>
+  <div id="vig3d"></div>
+  <div id="fade3d"></div>
+
   <div id="hud" class="hidden">
     <div class="hud-left" dir="ltr">
       <div class="portrait"><img src="assets/img/p_hero.webp" alt=""></div>
@@ -38,6 +48,8 @@
     <button id="btn-pause" class="round-btn" aria-label="pause">II</button>
   </div>
 
+  <div id="bars3d" class="hidden"><div class="lb t"></div><div class="lb b"></div><button class="skip-btn ar" id="skip3d">تخطّي ◂◂</button></div>
+  <div id="subs3d" class="hidden"><div class="who ar"></div><div class="ar"></div><div class="en" dir="ltr"></div></div>
   <div id="toast" class="hidden"><div class="ar"></div><div class="en"></div></div>
   <div id="banner" class="hidden"><div class="ar"></div><div class="en"></div></div>
 
@@ -81,7 +93,8 @@
       <div class="logo ar">مشوار المانجا</div>
       <div class="sub ar">المهمة ١ · قبل المغرب</div>
       <div class="en sub-en" dir="ltr">The Mango Run · Mission 1: Before Sunset</div>
-      <button class="big-btn ar" id="btn-start">يلا بينا</button>
+      <button class="big-btn ar btn3d" id="btn-start3d"><span class="new">جديد</span>العب بالـ<b>3D</b></button>
+      <button class="pill ar btn25" id="btn-start">النسخة الكلاسيك 2.5D</button>
       <div class="row">
         <button class="pill ar" id="btn-sound">الصوت: شغّال</button>
         <button class="pill ar" id="btn-subs">ترجمة EN: شغّالة</button>
@@ -95,6 +108,7 @@
       <div class="ptitle ar">إزاي تلعب</div>
       <div class="how" id="how-list"></div>
       <button class="big-btn ar" id="btn-how-close">تمام</button>
+      <div class="en small credit" dir="ltr">3D models: Powered by Tencent Hunyuan · Voices: ElevenLabs</div>
     </div>
   </div>
 
@@ -130,7 +144,9 @@
         <div class="stats">
           <div><b class="ar" id="end-mangoes"></b><span class="ar">مانجا</span><em class="en" dir="ltr">Mangoes</em></div>
           <div><b class="ar" id="end-time"></b><span class="ar">الوقت</span><em class="en" dir="ltr">Time</em></div>
+          <div class="only3d"><b class="ar" id="end-fights"></b><span class="ar">خناقة الحارة</span><em class="en" dir="ltr">Alley fight</em></div>
         </div>
+        <div id="end-checks" class="only3d"></div>
         <div class="ar rank" id="end-rank"></div>
         <div class="en small" id="end-rank-en" dir="ltr"></div>
         <div class="row">

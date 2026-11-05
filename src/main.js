@@ -8,6 +8,7 @@ import { INTRO, FINALE, HINTS } from './strings.js';
 
 const Q = new URLSearchParams(location.search);
 const DEBUG_AUTO = Q.get('debug') === 'auto';
+const DEBUG_AUTO3D = Q.get('debug') === 'auto3d';
 const START_SEG = Q.has('seg') ? +Q.get('seg') : null;
 const SHOW_FPS = Q.has('fps') || DEBUG_AUTO;
 const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
@@ -32,6 +33,7 @@ window.__saidi = game;
 const glog = (...a) => { const s = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '); game.log.push(s); console.log('[saidi]', s); };
 
 function resize() {
+  if (in3D()) return;
   const w = innerWidth, h = innerHeight;
   renderer.setPixelRatio(Math.max(1, MAX_DPR * dprScale));
   renderer.setSize(w, h, false);
@@ -58,9 +60,29 @@ addEventListener('resize', resize);
   glog('loaded', { textures: Object.keys((await import('./gfx.js')).tex).length });
   toTitle();
   if (DEBUG_AUTO) setTimeout(() => startGame(), 300);
+  if (DEBUG_AUTO3D || Q.has('seg3d')) setTimeout(() => start3D(), 300);
 })();
 
+// ---------------------------------------------------------------- 3D mode (loaded only when chosen)
+let g3 = null;
+const in3D = () => !!(g3 && g3.active);
+async function start3D() {
+  gesture();
+  if (g3) { g3.exit(); g3 = null; }
+  state = '3d';
+  ui.clearWorld(); ui.show('hud', false); ui.show('controls', false);
+  try {
+    const m = await import('./3d/game3d.js');
+    g3 = await m.start3D({ renderer, ui, isTouch, auto: DEBUG_AUTO3D });
+    game.g3 = g3;
+  } catch (e) {
+    console.error('3D mode failed', e); game.g3Error = String(e && e.message);
+    g3 = null; toTitle();
+  }
+}
+
 function toTitle() {
+  if (g3) { g3.exit(); g3 = null; resize(); }
   state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.show('controls', false); ui.clearWorld();
   playMusic('title', 0.55);
 }
@@ -87,25 +109,26 @@ addEventListener('keydown', gesture, { capture: true });
 // ---------------------------------------------------------------- buttons
 const on = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); sfx.tap(); fn(); });
 on('btn-start', () => startGame());
+on('btn-start3d', () => start3D());
 on('btn-how', () => { ui.screen('screen-how'); });
 on('btn-how-close', () => { ui.screen('screen-title'); });
 const toggleSound = () => { setSound(!soundOn()); ui.setSoundLabel(soundOn()); localStorage.setItem('saidi.sound', soundOn() ? '1' : '0'); };
 on('btn-sound', toggleSound); on('btn-sound2', toggleSound);
 const toggleSubs = () => ui.setSubs(!ui.subs);
 on('btn-subs', toggleSubs); on('btn-subs2', toggleSubs);
-on('btn-pause', () => pause());
-on('btn-resume', () => resume());
-on('btn-restart-cp', () => { ui.screen(null); world.restartFromCheckpoint(); resume(); });
+on('btn-pause', () => (in3D() ? g3.pause() : pause()));
+on('btn-resume', () => (in3D() ? g3.resume() : resume()));
+on('btn-restart-cp', () => { if (in3D()) return g3.restartCp(); ui.screen(null); world.restartFromCheckpoint(); resume(); });
 on('btn-menu', () => toTitle());
 on('btn-menu2', () => toTitle());
-on('btn-retry', () => { ui.screen(null); world.restartFromCheckpoint(failKind); state = 'play'; ui.show('hud', true); ui.show('controls', true); clearInput(); });
-on('btn-again', () => startGame(true));
+on('btn-retry', () => { if (in3D()) return g3.retry(); ui.screen(null); world.restartFromCheckpoint(failKind); state = 'play'; ui.show('hud', true); ui.show('controls', true); clearInput(); });
+on('btn-again', () => (in3D() ? g3.again() : startGame(true)));
 on('btn-skip', () => ui.dialogSkip && ui.dialogSkip());
 document.getElementById('dialog').addEventListener('click', () => ui.dialogNext && ui.dialogNext());
 if (localStorage.getItem('saidi.sound') === '0') setSound(false);
 ui.setSoundLabel(soundOn()); ui.setSubs(ui.subs);
 
-initInput(() => { if (state === 'play') pause(); else if (state === 'paused') resume(); }, () => { if (state === 'intro' || state === 'finale') ui.dialogNext && ui.dialogNext(); });
+initInput(() => { if (in3D()) { if (g3.state === 'play') g3.pause(); else if (g3.state === 'paused') g3.resume(); return; } if (state === 'play') pause(); else if (state === 'paused') resume(); }, () => { if (state === 'intro' || state === 'finale') ui.dialogNext && ui.dialogNext(); });
 
 // ---------------------------------------------------------------- flow
 function startGame(skipIntro) {
@@ -169,7 +192,7 @@ function onFinish() {
   ui.dialog(FINALE(world.mangoes), 'cut_finale', () => { state = 'end'; ui.end(res); glog('end-screen'); });
   if (DEBUG_AUTO) autoAdvance();
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { if (in3D()) g3.pause(); else pause(); } });
 
 // ---------------------------------------------------------------- touch-button coverage check
 // Counts frames where an on-screen thumb button overlaps the hero or an obstacle (the tests read it).
@@ -213,7 +236,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   let dt = (now - last) / 1000; last = now;
   if (dt > 0.25) dt = 0.25;
-  if (!world) return;
+  if (!world || in3D()) return;
   const c0 = performance.now();
   if (state === 'play') {
     acc += dt;

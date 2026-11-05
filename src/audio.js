@@ -1,5 +1,5 @@
 // WebAudio: two music loops (decoded on first gesture) and synthesized sound effects (no SFX assets).
-let ctx = null, master, musicGain, sfxGain, noiseBuf;
+let ctx = null, master, musicGain, sfxGain, voiceGain, noiseBuf;
 const music = { buffers: {}, src: null, name: null };
 let enabled = true;
 
@@ -12,6 +12,7 @@ export function audioInit() {
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(master);
   musicGain = ctx.createGain(); musicGain.gain.value = 0.5; musicGain.connect(comp);
   sfxGain = ctx.createGain(); sfxGain.gain.value = 0.8; sfxGain.connect(comp);
+  voiceGain = ctx.createGain(); voiceGain.gain.value = 1.0; voiceGain.connect(master);
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -47,6 +48,9 @@ export function playMusic(name, vol = 0.5) {
   src.connect(g); g.connect(musicGain); src.start(now, 0.03);
   music.src = src; music.g = g; music.name = name;
 }
+// used by the 3D mode (voices, engine and impact sounds)
+export function audioParts() { return { ctx, sfxGain, voiceGain, musicGain, noiseBuf }; }
+export function setMusicRate(r) { if (music.src && ctx) music.src.playbackRate.setTargetAtTime(r, ctx.currentTime, 0.5); }
 export function stopMusic() { playMusic('__none__'); }
 export function setMusicDuck(v) { if (musicGain) musicGain.gain.setTargetAtTime(0.5 * v, ctx.currentTime, 0.2); }
 
