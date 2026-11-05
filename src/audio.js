@@ -92,6 +92,7 @@ export const sfx = {
   bounce() { tone('sine', 180, 720, 0.18, 0.3); tone('square', 360, 900, 0.1, 0.05); },
   kick() { tone('sine', 160, 60, 0.1, 0.4); noise(0.05, 0.2, 'bandpass', 1200, 1); },
   whack() { tone('sine', 220, 80, 0.12, 0.45); noise(0.08, 0.4, 'bandpass', 2400, 1.5); },
+  thud() { tone('sine', 120, 45, 0.16, 0.5); noise(0.12, 0.45, 'lowpass', 600); noise(0.05, 0.2, 'bandpass', 2600, 1.2); },
   swing() { noise(0.2, 0.25, 'bandpass', 600, 2, 0, 2600); },
   vault() { noise(0.35, 0.22, 'bandpass', 400, 1.5, 0, 1800); tone('sine', 200, 420, 0.3, 0.12); },
   bleat() {

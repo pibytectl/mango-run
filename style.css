@@ -157,24 +157,29 @@ button { border: 0; cursor: pointer; color: inherit; background: none; touch-act
 .edge-warn { position: absolute; right: 8px; width: 46px; height: 46px; margin-top: -23px; border-radius: 50%; background: rgba(220, 50, 30, 0.85);
   color: #fff; font-size: 30px; font-weight: 900; text-align: center; line-height: 46px; animation: blink .3s infinite; box-shadow: 0 0 18px rgba(255,60,30,0.8); }
 
-/* touch controls */
-#controls { position: absolute; inset: 0; pointer-events: none; }
-.pad-left, .pad-right { position: absolute; bottom: max(12px, var(--safe-b)); display: flex; align-items: flex-end; gap: 10px; pointer-events: auto; }
-.pad-left { left: max(14px, var(--safe-l)); }
-.pad-right { right: max(14px, var(--safe-r)); }
-.cbtn { width: 76px; height: 76px; border-radius: 50%; background: rgba(30, 14, 6, 0.42); border: 2px solid rgba(255, 220, 160, 0.42);
-  display: flex; flex-direction: column; align-items: center; justify-content: center; color: rgba(255, 244, 222, 0.9);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.25); transition: transform .05s, background .05s; touch-action: none; }
-.cbtn span { font-size: 30px; line-height: 1; font-family: sans-serif !important; }
-.cbtn em { font-style: normal; font-size: 11px; font-weight: 700; margin-top: 1px; opacity: 0.85; }
-.cbtn.small { width: 58px; height: 58px; margin-bottom: 0; }
-.cbtn.small span { font-size: 20px; }
-.cbtn.jump { width: 92px; height: 92px; }
-.cbtn.act { width: 74px; height: 74px; margin-bottom: 26px; }
-.cbtn.act .ico { width: 34px; height: 30px; }
-.cbtn.on { background: rgba(244, 181, 76, 0.55); transform: scale(0.93); border-color: #ffd98a; }
+/* touch controls: low in the corners, inside the safe areas, translucent; sized from the viewport height.
+   Left thumb: a wide split pad (left | right), swipe down on it (or the small chip) to duck.
+   Right thumb: big jump in the corner, the staff button above-left of it on an arc. */
+#controls { position: absolute; inset: 0; pointer-events: none; --u: clamp(46px, 14.5vh, 66px); --pad-b: max(6px, calc(var(--safe-b) - 6px)); }
+#controls > * { position: absolute; pointer-events: auto; touch-action: none; }
+.cbtn { display: flex; align-items: center; justify-content: center; color: rgba(255, 244, 222, 0.82);
+  background: rgba(24, 10, 4, 0.3); border: 1.5px solid rgba(255, 220, 160, 0.38); border-radius: 50%;
+  transition: transform .06s, background .06s, border-color .06s; touch-action: none; }
+.cbtn span { font-size: calc(var(--u) * 0.36); line-height: 1; font-family: sans-serif !important; }
+.cbtn.on { background: rgba(244, 181, 76, 0.42); border-color: rgba(255, 217, 138, 0.85); color: #fff; transform: scale(0.92); }
 .cbtn.hint { animation: hintPulse 0.9s infinite; }
-@keyframes hintPulse { 50% { box-shadow: 0 0 0 6px rgba(255, 217, 138, 0.55), 0 0 24px rgba(255, 190, 80, 0.8); } }
+@keyframes hintPulse { 50% { box-shadow: 0 0 0 5px rgba(255, 217, 138, 0.45), 0 0 18px rgba(255, 190, 80, 0.7); } }
+.pad-move { left: max(8px, var(--safe-l)); bottom: var(--pad-b); width: calc(var(--u) * 2.75); height: var(--u);
+  display: flex; border-radius: 999px; background: rgba(24, 10, 4, 0.16); border: 1.5px solid rgba(255, 220, 160, 0.22); overflow: hidden; }
+.pad-move .cbtn.half { flex: 1; height: 100%; border-radius: 0; border: 0; background: transparent; }
+.pad-move .cbtn.half.on { background: rgba(244, 181, 76, 0.38); transform: none; }
+.pad-split { width: 1.5px; margin: 18% 0; background: rgba(255, 220, 160, 0.25); }
+.cbtn.duck { left: calc(max(8px, var(--safe-l)) + var(--u) * 2.75 + 8px); bottom: var(--pad-b); width: calc(var(--u) * 0.72); height: calc(var(--u) * 0.72); }
+.cbtn.duck span { font-size: calc(var(--u) * 0.26); }
+.cbtn.jump { right: max(8px, var(--safe-r)); bottom: var(--pad-b); width: calc(var(--u) * 1.18); height: calc(var(--u) * 1.18); }
+.cbtn.jump span { font-size: calc(var(--u) * 0.46); }
+.cbtn.act { right: calc(max(8px, var(--safe-r)) + var(--u) * 1.18 + 4px); bottom: calc(var(--pad-b) + var(--u) * 0.42); width: calc(var(--u) * 0.88); height: calc(var(--u) * 0.88); }
+.cbtn.act .ico { width: calc(var(--u) * 0.56); height: calc(var(--u) * 0.46); opacity: 1; filter: drop-shadow(0 0 2px rgba(0,0,0,0.6)); }
 body.desktop #controls { display: none !important; }
 
 /* dialogue */

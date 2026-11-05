@@ -27,7 +27,7 @@ camera.position.z = 10;
 
 let world = null;
 let state = 'loading';
-const game = { state: () => state, stats: { fpsSamples: [], segTimes: {}, deaths: 0 }, log: [] };
+const game = { state: () => state, stats: { fpsSamples: [], segTimes: {}, deaths: 0, coverChecks: 0, heroCovered: 0, obstacleCovered: 0, coveredWhat: {} }, log: [] };
 window.__saidi = game;
 const glog = (...a) => { const s = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '); game.log.push(s); console.log('[saidi]', s); };
 
@@ -171,6 +171,39 @@ function onFinish() {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 
+// ---------------------------------------------------------------- touch-button coverage check
+// Counts frames where an on-screen thumb button overlaps the hero or an obstacle (the tests read it).
+let ctlRects = null;
+addEventListener('resize', () => { ctlRects = null; });
+function coverageCheck() {
+  const ctl = document.getElementById('controls');
+  if (ctl.classList.contains('hidden') || getComputedStyle(ctl).display === 'none') return;
+  if (!ctlRects) ctlRects = [...ctl.querySelectorAll('.cbtn.duck, .cbtn.act, .cbtn.jump, .pad-move')].map((e) => e.getBoundingClientRect()).filter((r) => r.width);
+  const V = world.view, cx = camera.position.x, cy = camera.position.y, W = innerWidth, H = innerHeight;
+  const toR = (x0, x1, y0, y1) => ({ left: (x0 - (cx - V.w / 2)) / V.w * W, right: (x1 - (cx - V.w / 2)) / V.w * W, top: (cy + V.h / 2 - y1) / V.h * H, bottom: (cy + V.h / 2 - y0) / V.h * H });
+  const onScreen = (a) => a.right > 0 && a.left < W && a.bottom > 0 && a.top < H;
+  const hit = (a) => ctlRects.some((r) => a.left < r.right && a.right > r.left && a.top < r.bottom && a.bottom > r.top);
+  const st = game.stats, h = world.hero;
+  st.coverChecks++;
+  if (hit(toR(h.x - 0.45, h.x + 0.45, h.y, h.y + 2.0))) st.heroCovered++;
+  const obs = [];
+  for (const t of world.toks) if (t.active) obs.push(['toktok', t.x - 1.3, t.x + 1.3, 0, 1.95]);
+  for (const b of world.balls) obs.push(['ball', b.x - 0.21, b.x + 0.21, b.y - 0.21, b.y + 0.21]);
+  if (world.goat.state === 'block') obs.push(['goat', 215.4, 216.6, 0, 1.05]);
+  for (const L of world.laundry) obs.push(['laundry', L.x0, L.x1, L.y0, L.y1]);
+  for (const p of world.puddles) obs.push(['puddle', p.x0, p.x1, 0, 0.1]);
+  for (const s of world.solids) if (s.y1 - Math.max(s.y0, -0.5) < 3.2 && s.y1 - s.y0 < 3.2) obs.push(['prop', s.x0, s.x1, s.y0, s.y1]);
+  for (const p of world.pickups) if (!p.collected) obs.push(['mango', p.x - 0.2, p.x + 0.2, p.y - 0.2, p.y + 0.2]);
+  for (const [n, x0, x1, y0, y1] of obs) {
+    const r = toR(x0, x1, y0, y1);
+    if (!onScreen(r) || !hit(r)) continue;
+    // all on-screen overlaps are counted; "relevant" = still ahead of the hero and at his level (can hit him)
+    st.obstacleCovered++; st.coveredWhat[n] = (st.coveredWhat[n] || 0) + 1;
+    if (x1 > h.x - 0.5 && y1 > h.y - 1.5) { st.relevantCovered = (st.relevantCovered || 0) + 1; (st.relevantWhat = st.relevantWhat || []).push([n, Math.round(x0), Math.round(h.x)]); }
+  }
+}
+let frameNo = 0;
+
 // ---------------------------------------------------------------- main loop: fixed 60 Hz step + interpolation
 const STEP = 1 / 60;
 let acc = 0, last = performance.now(), fpsAcc = 0, fpsN = 0, slowStreak = 0, fastStreak = 0, cpuAcc = 0, cpuN = 0;
@@ -192,7 +225,7 @@ function frame(now) {
   if (state === 'play' || state === 'paused' || state === 'fail' || state === 'finale' || state === 'intro') {
     world.render(state === 'play' ? acc / STEP : 1, state === 'play' ? dt : 0);
     renderer.render(scene, camera);
-    if (state === 'play') { cpuAcc += performance.now() - c0; cpuN++; }
+    if (state === 'play') { cpuAcc += performance.now() - c0; cpuN++; if (isTouch && (frameNo++ % 4 === 0)) coverageCheck(); }
   } else if (state === 'title' || state === 'end') {
     // idle background: keep the GPU cool
   }

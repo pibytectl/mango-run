@@ -107,7 +107,7 @@ export const HOWTO = [
   { k: 'الهدف', ar: 'وصّل قفص المانجا للمعدية قبل ما الشمس تغيب.', en: 'Get the mango crate to the ferry before sunset.' },
   { k: 'المانجا', ar: 'لو اتخبطت أو وقعت، المانجا بتقع من القفص. لِمّها بسرعة قبل ما تضيع!', en: 'Get hit or fall and mangoes spill. Grab them fast before they\'re gone!' },
   { k: 'النبّوت', ar: 'وإنت بتجري: اتسند عليه ونُط بعيد. قدام كورة أو معزة: اضرب الكورة أو زُق المعزة بالراحة.', en: 'While running: vault far. Near a ball or a goat: bat the ball or gently nudge the goat.' },
-  { k: 'الموبايل', ar: '◀ ▶ للمشي، ▼ توطّي، «نُط» تنط (دوس أطول تنط أعلى)، «نبّوت» للنبّوت.', en: 'Left/right to move, down to duck, Jump (hold for higher), Staff.' },
+  { k: 'الموبايل', ar: '◀ ▶ تحت إيدك الشمال للمشي، واسحب صباعك لتحت عليهم (أو دوس ▼) عشان توطّي. ⤒ تحت إيدك اليمين للنط (دوس أطول تنط أعلى)، وزرار النبّوت جنبه.', en: 'Left thumb: move pad (swipe down on it, or tap the small down button, to duck). Right thumb: jump (hold for higher), staff button beside it.' },
   { k: 'الكيبورد', ar: 'الأسهم أو WASD للمشي والتوطية، Space للنط، X أو J للنبّوت، Esc للاستراحة.', en: 'Arrows or WASD, Space to jump, X or J for the staff, Esc to pause.' },
   { k: 'النجوم', ar: 'نجمة لما توصل، اتنين لو معاك ٩ مانجايات أو أكتر، وتلاتة لو الاتناشر كاملين.', en: 'One star for arriving, two for 9+ mangoes, three for all 12.' },
 ];

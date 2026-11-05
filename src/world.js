@@ -364,7 +364,7 @@ export class World {
     h.reset(x, y + 0.02);
     h.invuln = full ? 0 : 1.2;
     this.cam.x = this.cam.px = x + 2.5; this.cam.y = this.cam.py = y + 2.4;
-    this.cam.look = 2.5;
+    this.cam.look = 2.5; this.cam.groundY = y;
   }
   restartFromCheckpoint(reason) {
     const c = this.cp;
@@ -423,7 +423,7 @@ export class World {
     const ahead = (x) => (x - h.x) * h.facing;
     const g = this.goat;
     if (g.state === 'block' && ahead(g.x) > -0.3 && ahead(g.x) < 2.6 && Math.abs(h.y - g.y) < 1) return 'goat';
-    for (const b of this.balls) if (b.active && ahead(b.x) > -0.6 && ahead(b.x) < 3.2 && b.y - h.y < 2.6) return 'ball';
+    for (const b of this.balls) if (b.active && ahead(b.x) > -0.6 && ahead(b.x) < 5 && b.y - h.y < 2.9) return 'ball';
     return null;
   }
   onNudge(h) {
@@ -502,9 +502,9 @@ export class World {
       if (b.y < 0.21) { b.y = 0.21; b.vy = Math.abs(b.vy) * 0.62; if (b.vy > 1.5) sfx.kick(); }
       if (b.active) {
         // staff swing bats it back
-        if (h.swingT > 0.04 && h.swingT < 0.27) {
+        if (h.strikeActive()) {
           const dx = (b.x - h.x) * h.facing;
-          if (dx > -0.4 && dx < 2.6 && b.y > h.y - 0.2 && b.y < h.y + 2.4) {
+          if (dx > -0.4 && dx < 2.7 && b.y > h.y - 0.2 && b.y < h.y + 2.9) {
             b.vx = 13 * h.facing; b.vy = 7; b.active = false; sfx.whack(); this.shake(0.2); this.hitstop(0.06);
             this.fx.sparkle(b.x, b.y, 12); this.say(b.kicker.n, LINES.kidGoal, 2.2); this.ui.floatText(b.x, b.y + 0.5, 'جووون!');
           }
@@ -659,10 +659,15 @@ export class World {
     const lookT = h.facing * 2.6 + h.vx * 0.22;
     c.look += (lookT - c.look) * Math.min(1, dt * 2.2);
     const tx = h.x + c.look;
-    const off = this.view.h * 0.2;
-    let ty = h.y + off;
-    if (h.x > ROOF_X0 - 3 && h.x < SEG_X[3] + 2 && !h.onGround && h.vy < 0) ty = Math.max(ty, c.y - 0.02);
-    ty = Math.max(ty, off);
+    const off = this.view.h * 0.14; // feet ~36% up the screen: clear of the thumb buttons
+    // platformer camera: hold the height of the level ground (streets, roofs, jetty, ferry) through jumps
+    // and small props, so the ground line never drops into the thumb-button zone
+    const g = h.ground;
+    if (h.onGround && g && (g.y1 - g.y0 > 4 || g === this.ferry.deck || g.y1 > (c.groundY ?? 0) + 4)) c.groundY = h.y;
+    let focus = c.groundY ?? h.y;
+    if (h.y > focus + 2.0) focus = h.y - 2.0;
+    if (h.y < focus - 0.05) focus = h.y;
+    let ty = Math.max(focus + off, off);
     c.x += (tx - c.x) * Math.min(1, dt * 5.5);
     const vk = h.vy < -12 ? 7 : 3.2;
     c.y += (ty - c.y) * Math.min(1, dt * vk);
@@ -687,7 +692,7 @@ export class World {
     // tok-tok: jump to land on its roof
     for (const t of this.toks) if (t.active) { const d = t.x - 1.1 - h.x; if (d > 0 && d < 5.2 + Math.abs(h.vx) * 0.2 && h.onGround) press('jump'); }
     // ball: bat it
-    for (const ball of this.balls) if (ball.active) { const d = ball.x - h.x; if (d > 0.3 && d < 2.6) press('act'); }
+    for (const ball of this.balls) if (ball.active) { const d = (ball.x - h.x) * h.facing; if (d > 0.8 && d < 2.6 + (Math.abs(ball.vx) + Math.abs(h.vx)) * 0.13) press('act'); }
     // goat: nudge
     if (this.goat.state === 'block' && this.goat.x - h.x < 2.2 && this.goat.x - h.x > 0) { b.right = h.x < this.goat.x - 1.2; press('act'); return; }
     // puddles: jump
@@ -786,7 +791,7 @@ export class World {
     if (gt !== null && !h.frozen) {
       const dist = h.root.position.y - gt;
       const s = Math.max(0.3, 1 - dist * 0.12);
-      this.shadow.visible = true; this.shadow.position.set(hx, gt + 0.02, 0); this.shadow.scale.set(1.25 * s, 0.32 * s, 1);
+      this.shadow.visible = true; this.shadow.position.set(hx, gt + 0.02, 0); this.shadow.scale.set(1.55 * s, 0.36 * s, 1);
     } else this.shadow.visible = false;
 
     // entities

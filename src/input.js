@@ -7,6 +7,8 @@ export const input = {
 };
 const keys = new Set();
 const touchBtns = new Map(); // touch id -> btn name
+const touchStart = new Map(); // touch id -> start y on the move pad (swipe down = duck)
+const swipeDown = new Set();
 let touchSet = new Set();
 
 const KEYMAP = {
@@ -29,14 +31,19 @@ export function initInput(onPause, onAdvance) {
     input.anyPressed = true;
   });
   addEventListener('keyup', (e) => { const b = KEYMAP[e.code]; if (b) keys.delete(b); });
-  addEventListener('blur', () => { keys.clear(); touchBtns.clear(); refreshTouch(); });
+  addEventListener('blur', () => { keys.clear(); touchBtns.clear(); swipeDown.clear(); touchStart.clear(); refreshTouch(); });
 
   const ctl = document.getElementById('controls');
   const btnEls = [...ctl.querySelectorAll('[data-btn]')];
   const update = (e) => {
     for (const t of e.changedTouches) {
-      if (e.type === 'touchend' || e.type === 'touchcancel') { touchBtns.delete(t.identifier); continue; }
-      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if (e.type === 'touchend' || e.type === 'touchcancel') { touchBtns.delete(t.identifier); touchStart.delete(t.identifier); swipeDown.delete(t.identifier); continue; }
+      if (e.type === 'touchstart') { const el0 = document.elementFromPoint(t.clientX, t.clientY); if (el0 && el0.closest && el0.closest('#pad-move')) touchStart.set(t.identifier, t.clientY); }
+      if (touchStart.has(t.identifier)) { if (t.clientY - touchStart.get(t.identifier) > 22) swipeDown.add(t.identifier); else if (t.clientY - touchStart.get(t.identifier) < 10) swipeDown.delete(t.identifier); }
+      // a thumb that slid below the pad still steers by its x position
+      const pad = document.getElementById('pad-move').getBoundingClientRect();
+      const cy = touchStart.has(t.identifier) ? Math.min(t.clientY, pad.bottom - 4) : t.clientY;
+      const el = document.elementFromPoint(t.clientX, cy);
       const b = el && el.closest && el.closest('[data-btn]');
       const name = b ? b.dataset.btn : null;
       const prev = touchBtns.get(t.identifier);
@@ -66,6 +73,7 @@ export function initInput(onPause, onAdvance) {
 
   function refreshTouch() {
     touchSet = new Set(touchBtns.values());
+    if (swipeDown.size) touchSet.add('down');
     for (const el of btnEls) el.classList.toggle('on', touchSet.has(el.dataset.btn));
   }
 }
@@ -87,4 +95,4 @@ export function pollInput() {
 }
 export function consumeJump() { const p = input.jumpPressed; input.jumpPressed = false; return p; }
 export function consumeAct() { const p = input.actPressed; input.actPressed = false; return p; }
-export function clearInput() { keys.clear(); touchBtns.clear(); touchSet = new Set(); input.jumpPressed = input.actPressed = false; }
+export function clearInput() { keys.clear(); touchBtns.clear(); swipeDown.clear(); touchStart.clear(); touchSet = new Set(); input.jumpPressed = input.actPressed = false; }

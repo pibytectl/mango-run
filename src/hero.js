@@ -4,6 +4,13 @@ import { input, consumeJump, consumeAct } from './input.js';
 import { sfx } from './audio.js';
 
 export const G = 32, JUMP_V = 12.4, MAXV = 7.4, DUCKV = 2.6, HALF_W = 0.3, H_STAND = 1.8, H_DUCK = 1.08;
+// Visual build of the rig (hitbox unchanged): a broad, boxy strongman like the concept art.
+const RIG_S = 1.08, TORSO_W = 1.02, ARM_W = 1.35;
+// Overhead nabboot strike: wind-up, fast chop, impact hold, recovery (seconds). The goat nudge uses the
+// same downward arc, slower, and taps the ground in front of her (never the animal).
+export const STRIKE = { wind: 0.12, chop: 0.08, hold: 0.09, rec: 0.13 };
+export const NUDGE = { wind: 0.2, chop: 0.14, hold: 0.12, rec: 0.16 };
+const total = (p) => p.wind + p.chop + p.hold + p.rec;
 const COYOTE = 0.1, BUFFER = 0.13, VAULT_VY = 13.6, VAULT_VX = 10.8;
 
 export class Hero {
@@ -30,8 +37,14 @@ export class Hero {
     if (this.invuln > 0) this.invuln -= dt;
     if (this.stun > 0) this.stun -= dt;
     if (this.hurtT > 0) this.hurtT -= dt;
-    if (this.swingT > 0) this.swingT -= dt;
-    if (this.nudgeT > 0) this.nudgeT -= dt;
+    for (const [key, P, kind] of [['swingT', STRIKE, 'strike'], ['nudgeT', NUDGE, 'nudge']]) {
+      if (this[key] <= 0) continue;
+      const before = total(P) - this[key];
+      this[key] -= dt;
+      const after = total(P) - this[key];
+      const impact = P.wind + P.chop;
+      if (before < impact && after >= impact) this.onImpact(kind);
+    }
     if (this.vaultT > 0) this.vaultT -= dt;
     if (this.onGround) this.stamina = Math.min(100, this.stamina + 34 * dt);
     else this.stamina = Math.min(100, this.stamina + 8 * dt);
@@ -63,9 +76,9 @@ export class Hero {
     // nabboot (context: goat > ball > vault > swing)
     if (consumeAct() && control && this.swingT <= 0 && this.nudgeT <= 0 && this.vaultT <= 0) {
       const ctx = w.actContext(this);
-      if (ctx === 'goat') { this.nudgeT = 0.45; this.stamina -= 8; sfx.nudge(); w.onNudge(this); }
+      if (ctx === 'goat') { this.nudgeT = total(NUDGE); this.stamina -= 8; sfx.swing(); }
       else if (ctx === 'ball' || !this.onGround || Math.abs(this.vx) < 3.0 || this.stamina < 28) {
-        if (this.stamina >= 10 || ctx === 'ball') { this.swingT = 0.3; this.swingHit = false; this.stamina = Math.max(0, this.stamina - 10); sfx.swing(); }
+        if (this.stamina >= 10 || ctx === 'ball') { this.swingT = total(STRIKE); this.swingHit = false; this.stamina = Math.max(0, this.stamina - 10); sfx.swing(); }
         else w.ui.flashStamina();
       } else {
         // pole-vault: plant the staff ahead and launch
@@ -159,13 +172,29 @@ export class Hero {
     }
   }
 
+  // live hit window: the chop and the impact hold
+  strikeActive() {
+    if (this.swingT <= 0) return false;
+    const e = total(STRIKE) - this.swingT;
+    return e >= STRIKE.wind * 0.8 && e <= STRIKE.wind + STRIKE.chop + STRIKE.hold;
+  }
+  onImpact(kind) {
+    const w = this.world, tipX = this.x + this.facing * 1.45;
+    if (kind === 'nudge') {
+      // a soft tap on the ground in front of the goat; she startles and steps aside
+      sfx.nudge(); w.fx.dust(tipX, this.y, 5, 0.6); w.shake(0.06); w.onNudge(this);
+      return;
+    }
+    sfx.thud(); w.fx.dust(tipX, this.y, 9, 0.9); w.shake(0.18); w.hitstop(0.035);
+    if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) {}
+  }
   hurt(srcX, { heart = true, spill = 2, line = null, kb = 5 } = {}) {
     if (this.invuln > 0 || this.frozen) return false;
     const w = this.world;
     this.invuln = 1.4; this.stun = 0.35; this.hurtT = 0.45;
     const d = Math.sign(this.x - srcX) || -this.facing;
     this.vx = d * kb; this.vy = Math.max(this.vy, 5.5); this.onGround = false;
-    this.swingT = 0; this.vaultT = 0; this.duck = false;
+    this.swingT = 0; this.nudgeT = 0; this.vaultT = 0; this.duck = false;
     if (heart) { w.loseHeart(); sfx.hurt(); w.shake(0.45); w.hitstop(0.07); w.flash(1); }
     else { sfx.cloth(); w.shake(0.2); }
     w.spillMangoes(spill, this.x, this.y + 1.6);
@@ -190,30 +219,30 @@ export class Hero {
       m.userData.part = name; return m;
     };
     this.legs = new THREE.Group(); root.add(this.legs);
-    this.backShin = mk('hero_shin', 0.42, 0.27, 0.963, { color: dark }); this.backShin.position.set(-0.07, 0.44, 0);
-    this.frontShin = mk('hero_shin', 0.42, 0.27, 0.963); this.frontShin.position.set(0.09, 0.44, 0);
+    this.backShin = mk('hero_shin', 0.42, 0.27, 0.963, { color: dark }); this.backShin.position.set(-0.1, 0.44, 0); this.backShin.scale.x *= 1.22;
+    this.frontShin = mk('hero_shin', 0.42, 0.27, 0.963); this.frontShin.position.set(0.11, 0.44, 0); this.frontShin.scale.x *= 1.22;
     this.legs.add(this.backShin, this.frontShin);
 
     this.body = new THREE.Group(); this.body.position.set(0, 0.9, 0); root.add(this.body);
     const off = (m, x, y) => { m.position.set(x, y - 0.9, 0); this.body.add(m); return m; };
-    this.backArm = off(mk('hero_arm', 0.66, 0.514, 0.925, { color: dark }), -0.044 - 0.06, 1.405);
+    this.backArm = off(mk('hero_arm', 0.66, 0.514, 0.925, { color: dark }), -0.065 - 0.08, 1.405); this.backArm.scale.x *= ARM_W;
     // torso: subdivided so the robe hem can sway
     const tg = new THREE.PlaneGeometry(1, 1, 1, 8); tg.translate(0, 0.5, 0);
     this.torsoBase = Float32Array.from(tg.attributes.position.array);
     this.torso = new THREE.Mesh(tg, matFor(tex.hero_torso));
-    this.torso.scale.set(0.8, 1.36, 1);
+    this.torso.scale.set(TORSO_W, 1.36, 1);
     off(this.torso, 0, 0.2);
-    this.crate = off(mk('hero_crate', 0.5, 0.5, 0.5), -0.25, 1.78);
-    this.head = off(mk('hero_head', 0.56, 0.446, 0.123), 0.0875, 1.514);
-    this.frontArm = off(mk('hero_arm', 0.66, 0.514, 0.925), -0.044 + 0.03, 1.405);
-    this.staff = mk('hero_staff', 0.171, 0.436, 0.5, { width: 1.95 });
+    this.crate = off(mk('hero_crate', 0.54, 0.5, 0.5), -0.34, 1.8);
+    this.head = off(mk('hero_head', 0.62, 0.446, 0.123), 0.13, 1.514);
+    this.frontArm = off(mk('hero_arm', 0.66, 0.514, 0.925), -0.065 + 0.06, 1.405); this.frontArm.scale.x *= ARM_W;
+    this.staff = mk('hero_staff', 0.2, 0.436, 0.5, { width: 1.95 });
     root.add(this.staff);
     // draw order inside the rig
     const order = [this.backShin, this.frontShin, this.torso, this.crate, this.backArm, this.head, this.staff, this.frontArm];
     order.forEach((m, i) => { m.renderOrder = 60 + i; });
     this.rigParts = order;
     this.root = root;
-    this.fistLocal = new THREE.Vector3((0.714 - 0.514) * 0.231, -(0.925 - 0.075) * 0.66, 0);
+    this.fistLocal = new THREE.Vector3((0.714 - 0.514) * 0.231, -(0.925 - 0.075) * 0.66, 0); // arm-local, before the arm's x scale
     this._v = new THREE.Vector3();
   }
 
@@ -226,7 +255,7 @@ export class Hero {
     const spd = Math.min(1, Math.abs(this.vx) / MAXV);
     const ph = this.phase;
     const ground = this.onGround;
-    r.scale.set(this.facing * this.sx, this.sy, 1);
+    r.scale.set(this.facing * this.sx * RIG_S, this.sy * RIG_S, 1);
     r.visible = !(this.invuln > 0 && this.hurtT <= 0 && Math.floor(t * 16) % 2 === 0) || this.frozen;
 
     let lean = 0, bob = 0, tsy = 1, fShin = 0, bShin = 0, fLift = 0, bLift = 0, armF = 0.18, staffA = Math.PI / 2;
@@ -261,15 +290,18 @@ export class Hero {
     // vault: staff from the plant point to the fist, body pitches forward
     let vaultK = -1;
     if (this.vaultT > 0) { vaultK = 1 - this.vaultT / 0.6; lean = -0.45 * Math.sin(vaultK * Math.PI); fShin = -0.2 - 0.6 * vaultK; bShin = -0.6; armF = 2.4; flare = 0.1; }
-    if (this.swingT > 0) {
-      const k = 1 - this.swingT / 0.3, e = 1 - Math.pow(1 - k, 3);
-      armF = -2.5 + e * 4.1; staffA = armF - Math.PI / 2;
+    // overhead strike: raise the staff high behind the head, chop down to low in front, hold, recover
+    const sp = this.swingT > 0 ? [STRIKE, total(STRIKE) - this.swingT, 0.95] : this.nudgeT > 0 ? [NUDGE, total(NUDGE) - this.nudgeT, 0.8] : null;
+    this.body.position.x = 0;
+    if (sp) {
+      const [P, e, low] = sp, UP = Math.PI + 0.3, a0 = armF;
+      if (e < P.wind) { const k = e / P.wind, q = 1 - (1 - k) * (1 - k); armF = a0 + (UP - a0) * q; lean = 0.15 * q; }
+      else if (e < P.wind + P.chop) { const k = (e - P.wind) / P.chop, q = k * k; armF = UP + (low - UP) * q; lean = 0.15 - 0.37 * q; }
+      else if (e < P.wind + P.chop + P.hold) { armF = low; lean = -0.22; this.body.position.y -= 0.0; }
+      else { const k = Math.min(1, (e - P.wind - P.chop - P.hold) / P.rec), q = k * k * (3 - 2 * k); armF = low + (a0 - low) * q; lean = -0.22 * (1 - q); }
+      staffA = armF - Math.PI / 2;
+      if (e >= P.wind && e < P.wind + P.chop + P.hold) { fShin = 0.35; bShin = -0.3; }
     }
-    if (this.nudgeT > 0) {
-      const k = 1 - this.nudgeT / 0.45;
-      armF = 1.35; staffA = 0.02; lean = -0.08;
-      this.body.position.x = Math.sin(k * Math.PI) * 0.12;
-    } else this.body.position.x = 0;
 
     this.bodyTilt += (lean - this.bodyTilt) * 0.35;
     this.body.rotation.z = this.bodyTilt;
@@ -294,7 +326,7 @@ export class Hero {
     for (let i = 0; i < pos.count; i++) {
       const bx = base[i * 3], by = base[i * 3 + 1];
       const b = Math.pow(1 - by, 2);
-      pos.setX(i, bx + (sway * b + flare * b * Math.sign(bx) * 2) / 0.8);
+      pos.setX(i, bx * (1 + 0.16 * (1 - by)) + (sway * b + flare * b * Math.sign(bx) * 2) / TORSO_W);
     }
     pos.needsUpdate = true;
 
@@ -321,7 +353,6 @@ export class Hero {
       this.staff.scale.x = 1.95;
       const a = vaultK >= 0 ? Math.PI / 2 - 0.9 : staffA;
       this.staff.rotation.z = a + (this.swingT > 0 || this.nudgeT > 0 ? this.bodyTilt : 0);
-      if (this.nudgeT > 0) this.staff.position.x += Math.sin((1 - this.nudgeT / 0.45) * Math.PI) * 0.35;
     }
   }
 }
