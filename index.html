@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#2a1408">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>مشوار المانجا</title>
+<link rel="preload" href="assets/fonts/cairo.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage"></div>
+<div id="ui">
+  <div id="world-ui"></div>
+
+  <div id="hud" class="hidden">
+    <div class="hud-left" dir="ltr">
+      <div class="portrait"><img src="assets/img/p_hero.webp" alt=""></div>
+      <div class="hud-stack">
+        <div id="hearts"></div>
+        <div class="stamina"><div id="stamina-fill"></div></div>
+        <div class="slots">
+          <div class="slot" id="slot-staff"><i class="ico ico-staff"></i><div class="cool" id="staff-cool"></div></div>
+          <div class="slot" id="slot-crate"><i class="ico ico-crate"></i><b id="mango-count">١٢</b></div>
+          <div class="slot" id="slot-mango"><img src="assets/img/mango.webp" alt=""></div>
+        </div>
+      </div>
+    </div>
+    <div class="hud-sun" dir="ltr">
+      <div class="sun-track"><div id="sun-dot"></div></div>
+      <div id="time-left" class="ar">٤:٣٠</div>
+    </div>
+    <button id="btn-pause" class="round-btn" aria-label="pause">II</button>
+  </div>
+
+  <div id="toast" class="hidden"><div class="ar"></div><div class="en"></div></div>
+  <div id="banner" class="hidden"><div class="ar"></div><div class="en"></div></div>
+
+  <div id="controls" class="hidden" dir="ltr">
+    <div class="pad-left">
+      <div class="cbtn" data-btn="left"><span>◀</span></div>
+      <div class="cbtn small" data-btn="down"><span>▼</span><em>وطّي</em></div>
+      <div class="cbtn" data-btn="right"><span>▶</span></div>
+    </div>
+    <div class="pad-right">
+      <div class="cbtn act" data-btn="act"><i class="ico ico-staff"></i><em>نبّوت</em></div>
+      <div class="cbtn jump" data-btn="jump"><span>⤒</span><em>نُط</em></div>
+    </div>
+  </div>
+
+  <div id="dialog" class="hidden">
+    <div class="cut-bg"><img id="cut-img" alt=""></div>
+    <div class="dbox">
+      <div class="dport"><img id="d-port" alt=""></div>
+      <div class="dtext">
+        <div class="dname ar" id="d-name"></div>
+        <div class="dline ar" id="d-line"></div>
+        <div class="dline-en en" id="d-en" dir="ltr"></div>
+      </div>
+      <div class="dnext ar">اضغط عشان تكمّل ◂</div>
+    </div>
+    <button class="skip-btn ar" id="btn-skip">تخطّي</button>
+  </div>
+
+  <div id="screen-loading" class="screen">
+    <div class="load-box">
+      <div class="logo ar">مشوار المانجا</div>
+      <div class="bar"><div id="load-fill"></div></div>
+      <div class="ar small" id="load-text">بنحضّر المانجا...</div>
+      <div class="en small" dir="ltr">Packing the mangoes...</div>
+    </div>
+  </div>
+
+  <div id="screen-title" class="screen hidden">
+    <div class="title-art"><img src="assets/img/title.webp" alt=""></div>
+    <div class="title-panel">
+      <div class="logo ar">مشوار المانجا</div>
+      <div class="sub ar">المهمة ١ · قبل المغرب</div>
+      <div class="en sub-en" dir="ltr">The Mango Run · Mission 1: Before Sunset</div>
+      <button class="big-btn ar" id="btn-start">يلا بينا</button>
+      <div class="row">
+        <button class="pill ar" id="btn-sound">الصوت: شغّال</button>
+        <button class="pill ar" id="btn-subs">ترجمة EN: شغّالة</button>
+        <button class="pill ar" id="btn-how">إزاي ألعب؟</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-how" class="screen hidden">
+    <div class="panel">
+      <div class="ptitle ar">إزاي تلعب</div>
+      <div class="how" id="how-list"></div>
+      <button class="big-btn ar" id="btn-how-close">تمام</button>
+    </div>
+  </div>
+
+  <div id="screen-pause" class="screen dim hidden">
+    <div class="panel narrow">
+      <div class="ptitle ar">استراحة</div>
+      <button class="big-btn ar" id="btn-resume">كمّل</button>
+      <button class="pill wide ar" id="btn-restart-cp">ابدأ من آخر نقطة</button>
+      <div class="row">
+        <button class="pill ar" id="btn-sound2">الصوت: شغّال</button>
+        <button class="pill ar" id="btn-subs2">ترجمة EN: شغّالة</button>
+      </div>
+      <button class="pill wide ar" id="btn-menu">القائمة الرئيسية</button>
+    </div>
+  </div>
+
+  <div id="screen-fail" class="screen dim hidden">
+    <div class="panel narrow">
+      <div class="ptitle ar" id="fail-title"></div>
+      <div class="en small" id="fail-title-en" dir="ltr"></div>
+      <div class="ar body" id="fail-body"></div>
+      <div class="en small" id="fail-body-en" dir="ltr"></div>
+      <button class="big-btn ar" id="btn-retry">كمّل من آخر نقطة</button>
+    </div>
+  </div>
+
+  <div id="screen-end" class="screen hidden">
+    <div class="end-wrap">
+      <div class="end-main">
+        <div class="ptitle ar">المهمة الأولى خلصت!</div>
+        <div class="en small" dir="ltr">Mission 1 complete!</div>
+        <div class="stars" id="stars" dir="ltr"><span>★</span><span>★</span><span>★</span></div>
+        <div class="stats">
+          <div><b class="ar" id="end-mangoes"></b><span class="ar">مانجا</span><em class="en" dir="ltr">Mangoes</em></div>
+          <div><b class="ar" id="end-time"></b><span class="ar">الوقت</span><em class="en" dir="ltr">Time</em></div>
+        </div>
+        <div class="ar rank" id="end-rank"></div>
+        <div class="en small" id="end-rank-en" dir="ltr"></div>
+        <div class="row">
+          <button class="big-btn ar" id="btn-again">العب تاني</button>
+          <button class="pill ar" id="btn-menu2">القائمة</button>
+        </div>
+      </div>
+      <div class="end-next">
+        <div class="ar next-h">الجاي...</div>
+        <div class="teaser"><img src="assets/img/teaser_m2.webp" alt=""><div class="tcap">
+          <div class="ar tt">المهمة ٢ · الحمامة الهربانة</div>
+          <div class="ar td">حمامة العيلة البيضا هربت فوق السطوح ليلة الفرح... ومحدش هيرجّعها غير رضوان.</div>
+          <div class="en te" dir="ltr">Mission 2 · The Runaway Pigeon: the family's white pigeon escaped over the rooftops on the wedding night.</div>
+        </div></div>
+        <div class="teaser"><img src="assets/img/teaser_m3.webp" alt=""><div class="tcap">
+          <div class="ar tt">المهمة ٣ · أسبوع في كشك عمّه</div>
+          <div class="ar td">عمّه سافر وساب له الكشك أسبوع. هيحصل إيه يعني؟</div>
+          <div class="en te" dir="ltr">Mission 3 · A Week at Uncle's Kiosk: his uncle left him the kiosk for a week. What could happen?</div>
+        </div></div>
+        <div class="ar soon">قريبًا</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="rotate" class="screen">
+    <div class="rot-icon"></div>
+    <div class="ar">لِف الموبايل بالعرض عشان تلعب</div>
+    <div class="en small" dir="ltr">Turn your phone sideways to play</div>
+  </div>
+  <div id="fps" class="hidden" dir="ltr"></div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
