@@ -50,7 +50,7 @@ export const LINES = {
   s5: { who: 'radwan', ar: 'يا ناس! الغسيل ده بتاع مين، اللي في نص الشارع؟', en: 'People! Whose laundry is this in the middle of the street?', tts: 'يا ناس! الغَسيل دَه بِتاع مين، اللي في نُصّ الشّارِع؟' },
   r1: { m: [1, 3], who: 'radwan', ar: 'هوبّا! زي الريشة!', en: 'Hup! Light as a feather!', tts: 'هوبّا! زَيّ الريشَة!' },
   r2: { m: [1, 3], who: 'radwan', ar: 'ولا يهمّك!', en: 'No problem!', tts: 'وَلا يِهِمَّك!' },
-  r3: { m: [1, 3], who: 'radwan', ar: 'آه يا ضهري... يا ساتر!', en: 'Oof, my back... good grief!', tts: '[groans] آه يا ضَهْري!... يا ساتِر!' },
+  r3: { m: [1, 3], who: 'radwan', ar: 'آه يا ضهري... يا ساتر!', en: 'Oof, my back... good grief!', tts: 'آه يا ضَهْري!... يا ساتِر!' },
   r4: { who: 'radwan', ar: 'المانجا! حاسب على المانجا!', en: 'The mangoes! Mind the mangoes!', tts: '[shouting] المانجا! حاسِب عَلى المانجا!' },
   r5: { who: 'radwan', ar: 'لا مؤاخذة يا جماعة! عدّوني!', en: 'Sorry, folks! Let me through!', tts: '[out of breath] لا مؤاخْذَة يا جَماعَة! عَدّوني!' },
 
