@@ -223,8 +223,10 @@ export class Chase {
     P.wallT -= dt; P.bumpT -= dt;
     if (Math.abs(P.d) > W) {
       P.d = Math.sign(P.d) * W; P.a *= -0.3; P.v *= Math.max(0.7, 1 - 2.2 * dt * 10);
-      if (P.wallT <= 0) { P.wallT = 0.4; g.onChase('wall', P); }
-    }
+      // one scrape when he hits the kerb, not one every 0.4 s while he rides along it (round 2 rattled)
+      if (!P.onWall && P.wallT <= 0) { P.wallT = 0.9; g.onChase('wall', P); }
+      P.onWall = true;
+    } else if (Math.abs(P.d) < W - 0.15) P.onWall = false;
     // --- thief AI: pick the clearest lane ahead, rubber-banded speed
     const gap = T.s - P.s;
     // rubber band: ahead he cruises a touch under your top speed; up close he floors it, so the boost is

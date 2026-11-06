@@ -24,7 +24,7 @@ export const sfx3 = {
   hurt() { tone('sawtooth', 260, 90, 0.22, 0.14); noise(0.16, 0.3, 'lowpass', 700); },
   thump() { tone('sine', 90, 40, 0.3, 0.6); noise(0.25, 0.4, 'lowpass', 400); },
   crash() { noise(0.6, 0.7, 'lowpass', 1800, 0.7, 0, 200); tone('square', 120, 50, 0.4, 0.15); for (let i = 0; i < 5; i++) tone('triangle', 900 + Math.random() * 900, 500, 0.08, 0.06, 0.05 + i * 0.06); },
-  scrape() { noise(0.3, 0.22, 'bandpass', 2400, 4, 0, 1200); },
+  scrape() { noise(0.28, 0.13, 'bandpass', 1900, 2.5, 0, 900); },
   bump() { tone('sine', 150, 70, 0.14, 0.45); noise(0.12, 0.35, 'lowpass', 1200); },
   boost() { noise(0.5, 0.25, 'bandpass', 300, 1.5, 0, 1600); },
   slide() { noise(0.55, 0.22, 'lowpass', 1500, 0.7, 0, 400); },
@@ -35,29 +35,80 @@ export const sfx3 = {
   cheer() { noise(1.6, 0.2, 'bandpass', 1300, 0.6); for (let i = 0; i < 8; i++) tone('triangle', 500 + Math.random() * 600, 700 + Math.random() * 500, 0.14, 0.035, 0.1 + Math.random()); },
 };
 
-// tok-tok engine: a buzzy two-stroke loop whose pitch follows speed
-export class Engine {
-  start() {
-    const { ctx, sfxGain } = audioParts(); if (!ctx || this.o) return;
-    this.o = ctx.createOscillator(); this.o.type = 'sawtooth';
-    this.o2 = ctx.createOscillator(); this.o2.type = 'square';
-    this.f = ctx.createBiquadFilter(); this.f.type = 'lowpass'; this.f.frequency.value = 900; this.f.Q.value = 2;
-    this.g = ctx.createGain(); this.g.gain.value = 0.0;
-    this.o.connect(this.f); this.o2.connect(this.f); this.f.connect(this.g); this.g.connect(sfxGain);
-    this.o.start(); this.o2.start();
-    this.g.gain.setTargetAtTime(0.07, ctx.currentTime, 0.3);
+// Tok-tok engine (round 3). Round 2 started a sawtooth + a square oscillator and never set their pitch, so
+// the whole ride was a constant 440 Hz chord: the "horn that doesn't stop", raspy enough to read as crackle.
+// Now: one looping AudioBuffer of a small single-cylinder putter (a decaying low thump + a little filtered
+// rasp per firing), built of whole firing cycles that each start and end at exactly zero, so the loop point
+// is silent and seamless (no click). One AudioBufferSourceNode per ride: start() is idempotent, the
+// playback rate (firing rate and pitch) and a lowpass follow the speed, updated at most ~12 times a second
+// (no per-frame automation), pause ducks it, stop() fades it out and releases every node.
+const ENGINE_HZ = 24, ENGINE_CYCLES = 24;
+let engineBuf = null;
+function engineBuffer(ctx) {
+  if (engineBuf && engineBuf.sampleRate === ctx.sampleRate) return engineBuf;
+  const sr = ctx.sampleRate, n = Math.round(sr / ENGINE_HZ), len = n * ENGINE_CYCLES;
+  const b = ctx.createBuffer(1, len, sr), d = b.getChannelData(0);
+  let seed = 9871; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  for (let c = 0; c < ENGINE_CYCLES; c++) {
+    // uneven firings (a cheap engine never fires the same twice): amplitude and thump pitch wobble per cycle
+    const amp = 0.62 + 0.38 * Math.abs(Math.sin(c * 2.39 + 0.7)), f = 62 + 14 * Math.sin(c * 1.7), s0 = c * n;
+    let lp = 0, lp2 = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, x = i / n;
+      const env = (1 - Math.exp(-t * 900)) * Math.exp(-t * 48);
+      const taper = x > 0.8 ? 0.5 + 0.5 * Math.cos(Math.PI * (x - 0.8) / 0.2) : 1; // reaches exactly 0 at the cycle end
+      lp += (rnd() - lp) * 0.22; lp2 += (lp - lp2) * 0.3;
+      const thump = Math.sin(2 * Math.PI * f * t) + 0.35 * Math.sin(2 * Math.PI * f * 2.02 * t);
+      d[s0 + i] = amp * env * taper * (0.55 * thump + 1.1 * lp2 + 0.25 * (lp - lp2) * Math.exp(-t * 120));
+    }
   }
+  let peak = 0; for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
+  for (let i = 0; i < len; i++) d[i] /= peak;
+  d[0] = 0; d[len - 1] = 0;
+  return (engineBuf = b);
+}
+export class Engine {
+  constructor() { this.src = null; this.want = false; this.muted = false; this.lastSet = -1; this.rate = 1; this.cut = 900; this.vol = 0.16; }
+  start() {
+    this.want = true;
+    const { ctx, sfxGain } = audioParts(); if (!ctx || this.src) return;
+    this.buf = engineBuffer(ctx);
+    const src = ctx.createBufferSource(); src.buffer = this.buf; src.loop = true; src.__tag = 'engine';
+    src.playbackRate.value = this.rate;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = this.cut; f.Q.value = 0.7;
+    const g = ctx.createGain(); g.gain.value = 0;
+    src.connect(f); f.connect(g); g.connect(sfxGain);
+    src.start();
+    g.gain.setTargetAtTime(this.muted ? 0 : this.vol, ctx.currentTime, 0.12);
+    this.src = src; this.f = f; this.g = g;
+  }
+  // speed in m/s; called every simulation step, applied at most every 80 ms and only when it changed
   set(speed, boost) {
-    const { ctx } = audioParts(); if (!ctx || !this.o) return;
-    const f = 38 + speed * 4.2 + (boost ? 14 : 0), t = ctx.currentTime;
-    this.o.frequency.setTargetAtTime(f, t, 0.08); this.o2.frequency.setTargetAtTime(f * 1.505, t, 0.08);
-    this.f.frequency.setTargetAtTime(500 + speed * 70 + (boost ? 600 : 0), t, 0.1);
-    this.g.gain.setTargetAtTime(0.05 + Math.min(0.06, speed * 0.004), t, 0.1);
+    if (!this.want) return;
+    const { ctx } = audioParts(); if (!ctx) return;
+    if (!this.src) this.start();   // audio unlocked mid-ride
+    const rate = 0.85 + Math.min(1.9, speed / 7.5) + (boost ? 0.3 : 0);
+    const cut = 700 + speed * 85 + (boost ? 700 : 0), vol = 0.12 + Math.min(0.08, speed * 0.006) + (boost ? 0.03 : 0);
+    const t = ctx.currentTime;
+    if (t - this.lastSet < 0.08 || (Math.abs(rate - this.rate) < 0.02 && Math.abs(vol - this.vol) < 0.005)) return;
+    this.lastSet = t; this.rate = rate; this.cut = cut; this.vol = vol;
+    this.src.playbackRate.setTargetAtTime(rate, t, 0.09);
+    this.f.frequency.setTargetAtTime(cut, t, 0.1);
+    if (!this.muted) this.g.gain.setTargetAtTime(vol, t, 0.12);
+  }
+  // pause menu / fail screen: quiet, but keep the node (resume brings it back without a new start)
+  mute(on) {
+    this.muted = on;
+    const { ctx } = audioParts(); if (!ctx || !this.g) return;
+    this.g.gain.setTargetAtTime(on ? 0 : this.vol, ctx.currentTime, 0.06);
   }
   stop() {
-    const { ctx } = audioParts(); if (!ctx || !this.o) return;
-    const o = this.o, o2 = this.o2; this.g.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
-    setTimeout(() => { try { o.stop(); o2.stop(); } catch (e) {} }, 800);
-    this.o = null;
+    this.want = false; this.muted = false;
+    const { ctx } = audioParts(); if (!ctx || !this.src) { this.src = null; return; }
+    const src = this.src, f = this.f, g = this.g, t = ctx.currentTime;
+    g.gain.setTargetAtTime(0, t, 0.08);
+    try { src.stop(t + 0.5); } catch (e) {}
+    src.onended = () => { try { src.disconnect(); f.disconnect(); g.disconnect(); } catch (e) {} };
+    this.src = this.f = this.g = null; this.lastSet = -1;
   }
 }

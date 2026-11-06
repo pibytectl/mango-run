@@ -81,14 +81,23 @@ export class Sky {
     this.group.position.set(camPos.x, 0, camPos.z);
     this.sunGlow.position.copy(this.dir).multiplyScalar(700);
     this.sunDisc.position.copy(this.dir).multiplyScalar(690);
-    // shadow camera follows the focus, snapped to texels to stop shimmering
+    // The shadow camera follows the focus, snapped to whole shadow-map texels IN LIGHT SPACE (round 3). Round 2
+    // rounded the world x and z, but the shadow map's axes are the light's (the sun is low and 17 degrees off the
+    // road), so every step of a walk moved the map by a fraction of a texel and every shadow edge in view
+    // shimmered: the "flicker while I'm walking". The basis is the one the shadow camera's lookAt builds
+    // (z toward the sun, x = up x z, y = z x x); only the across-light coordinates are rounded.
     const S = this.sun.shadow.camera.right, texel = (2 * S) / this.sun.shadow.mapSize.x;
-    const fx = Math.round(focus.x / texel) * texel, fz = Math.round(focus.z / texel) * texel;
-    this.sun.target.position.set(fx, focus.y, fz);
-    this.sun.position.set(fx + this.dir.x * 120, focus.y + this.dir.y * 120, fz + this.dir.z * 120);
+    const z = this.dir, x = _lx.set(z.z, 0, -z.x).normalize(), y = _ly.crossVectors(z, x);
+    let lx = focus.x * x.x + focus.y * x.y + focus.z * x.z, ly = focus.x * y.x + focus.y * y.y + focus.z * y.z;
+    const lz = focus.x * z.x + focus.y * z.y + focus.z * z.z;
+    if (!this.noSnap) { lx = Math.round(lx / texel) * texel; ly = Math.round(ly / texel) * texel; }
+    const t = _lt.set(0, 0, 0).addScaledVector(x, lx).addScaledVector(y, ly).addScaledVector(z, lz);
+    this.sun.target.position.copy(t);
+    this.sun.position.set(t.x + z.x * 120, t.y + z.y * 120, t.z + z.z * 120);
   }
 }
 
+const _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _lt = new THREE.Vector3();
 function radialTex() {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);

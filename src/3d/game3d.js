@@ -9,7 +9,7 @@ import { Hero, ATTACKS } from './hero3d.js';
 import { Npc, Goat, Pigeons } from './npc.js';
 import { Sky, Particles, Mangoes } from './fx3d.js';
 import { ChaseCam } from './camera3d.js';
-import { I3, initInput3D, readInput3D, takeLook, clearInput3D } from './input3d.js';
+import { I3, initInput3D, readInput3D, takeLook, clearInput3D, updateLockHint } from './input3d.js';
 import { Voice } from './voice.js';
 import { sfx3, Engine } from './sfx3d.js';
 import { Chase, makeTok, makeFerry } from './vehicle.js';
@@ -101,19 +101,21 @@ class Game3D {
 
   makeCast() {
     const S = this.scene, P = this.phys;
-    // townspeople wear galabeyas (the hero's model, muted colours from the reference photos: navy, olive,
-    // charcoal, grey-brown, black, off-white) with a white or coloured head wrap; the thief and his pals keep
-    // the thief model; kids in t-shirt colours
+    // townspeople wear galabeyas on the hero's rig, each with a body, head and beard of his own so none reads as
+    // Radwan (round 3, Mzee): heavier or thinner, shorter or taller; a white kufi, a dark scarf wrap or bare
+    // grey/black hair; grey beards and moustache-only faces; robes in blues, greys, white and pin stripes. The
+    // thief and his pals keep the thief model; kids in t-shirt colours.
     this.npc = {
-      driver: new Npc(S, P, { robe: 0x56647a, wrap: 0x8a8a86, name: 'driver' }),
-      tea: new Npc(S, P, { robe: 0xcfc6b0, name: 'tea' }),
+      driver: new Npc(S, P, { robe: 0x46566e, head: 'hair', hair: 0x24201c, beard: 2, build: [1.14, 0.97], name: 'driver' }),
+      tea: new Npc(S, P, { robe: 0xd9d4c6, stripe: 0x5b78a8, head: 'kufi', hair: 0x8e8a84, beard: 1, build: [0.9, 0.94], name: 'tea' }),
       kids: [new Npc(S, P, { tint: 0x3f7a55, scale: 0.62, name: 'kid1' }), new Npc(S, P, { tint: 0xc0943c, scale: 0.6, name: 'kid2' }), new Npc(S, P, { tint: 0x40609a, scale: 0.66, name: 'kid3' })],
       thief: new Npc(S, P, { name: 'thief' }),
       buddyA: new Npc(S, P, { tint: 0x2a3552, name: 'buddyA' }),
       buddyB: new Npc(S, P, { tint: 0x66654a, name: 'buddyB' }),
-      captain: new Npc(S, P, { robe: 0x2a3552, name: 'captain' }),
-      tokDriver: new Npc(S, P, { robe: 0x66654a, wrap: 0x6e5a44, name: 'tokDriver' }),
-      extras: [new Npc(S, P, { robe: 0x2b2a2b, name: 'pass1' }), new Npc(S, P, { robe: 0x5e5246, wrap: 0xb8ad96, scale: 0.97, name: 'pass2' })],
+      captain: new Npc(S, P, { robe: 0x25304a, head: 'scarf', wrap: 0x3a2e26, beard: 1, build: [1.16, 1.0], name: 'captain' }),
+      tokDriver: new Npc(S, P, { robe: 0x6d7276, head: 'hair', hair: 0x17130f, beard: 2, build: [0.93, 1.04], name: 'tokDriver' }),
+      extras: [new Npc(S, P, { robe: 0x2b2a2e, stripe: 0x8a8d94, head: 'scarf', wrap: 0x45403a, build: [0.94, 1.06], name: 'pass1' }),
+        new Npc(S, P, { robe: 0x3c6496, head: 'kufi', hair: 0x2a2520, beard: 2, build: [1.1, 0.93], name: 'pass2' })],
     };
     this.allNpcs = [...this.npc.extras, this.npc.driver, this.npc.tea, ...this.npc.kids, this.npc.thief, this.npc.buddyA, this.npc.buddyB, this.npc.captain, this.npc.tokDriver];
     for (const n of this.allNpcs) n.show(false);
@@ -165,6 +167,7 @@ class Game3D {
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
     this.applyDpr();
   }
+  applyPendingDpr() { this.dprScale = this.pendingDpr; this.pendingDpr = null; this.applyDpr(); }
   applyDpr() {
     const max = Math.min(window.devicePixelRatio || 1, this.isTouch ? 1.5 : 1.35);
     this.dprScale = this.dprScale || 1;
@@ -241,7 +244,7 @@ class Game3D {
     if (seg === 'roofs' || seg === 'jetty') setAmbient(seg === 'roofs' ? 0.32 : 0.2, 'roof');
     else setAmbient(seg === 'chase' ? 0.34 : seg === 'street' || seg === 'market' ? 0.24 : 0, 'street');
   }
-  showControls(on) { this.ui.show('hud', on); $('c3d').classList.toggle('hidden', !on); I3.enabled = on; }
+  showControls(on) { this.ui.show('hud', on); $('c3d').classList.toggle('hidden', !on); I3.enabled = on; updateLockHint(); }
   setButtons(seg) {
     const c = $('c3d');
     c.classList.toggle('veh', seg === 'chase'); c.classList.toggle('fight', seg === 'fight');
@@ -253,6 +256,9 @@ class Game3D {
     this.raf = requestAnimationFrame((t) => this.frame(t));
     let dt = (now - (this.last || now)) / 1000; this.last = now;
     if (dt > 0.25) dt = 0.25;
+    // a resolution change is applied here, right before this frame renders: resizing the canvas clears it, and
+    // round 2 resized after the render (in perf), so the browser showed one blank frame at every step
+    if (this.pendingDpr) this.applyPendingDpr();
     if (this.state === 'play') {
       if (this.hitStop > 0) { this.hitStop -= dt; }
       else {
@@ -285,6 +291,8 @@ class Game3D {
     const hero = this.hero;
     hero.inCombat = this.seg === 'fight' && this.mode === 'play';
     if (this.seg === 'chase' && this.chase.active) { this.chase.step(dt, this.mode === 'play' ? I : { steer: 0, throttle: 1, boost: false }); this.seatRiders(); }
+    // the tok-tok engine follows the ride's speed (into the crash too, where it brakes to idle)
+    if (this.engine.want) this.engine.set(this.chase.player.v, this.chase.player.boosting && this.chase.active);
     hero.update(dt, this.mode === 'play' ? I : {}, this.cam.yaw);
     if (this.mode === 'play') this.segStep(dt, I);
     else if (this.cutStep) this.cutStep(dt);
@@ -317,10 +325,10 @@ class Game3D {
     const foes = this.seg === 'fight' && this.fight.active ? this.fight.list.filter((f) => !f.ko && f.npc.root.visible).map((f) => f.pos) : null;
     this.cam.update(dt, {
       mode: this.seg === 'fight' && this.mode === 'play' ? 'fight' : 'foot', focus: h.pos, lock: lock ? lock.pos : null, foes,
-      heading: h.yaw, speed: Math.hypot(h.body.vel.x, h.body.vel.z), sprint: h.sprinting, slide: h.state === 'slide', look, touch: this.isTouch || !!this.bot,
+      heading: h.yaw, speed: Math.hypot(h.body.vel.x, h.body.vel.z), sprint: h.sprinting, slide: h.state === 'slide', look, touch: I3.touch || !!this.bot,
       // every on-foot stretch of the mission runs down -Z (west, to the Nile): on touch the camera lines up with
       // the route, not with the hero's heading, so an off-angle stick no longer curls "forward" into a wall
-      route: this.isTouch || this.bot ? Math.PI : undefined,
+      route: I3.touch || this.bot ? Math.PI : undefined,
       high: this.seg === 'roofs',
     });
   }
@@ -346,9 +354,15 @@ class Game3D {
     this.stats.fps.push(Math.round(fps));
     this.stats.calls = this.renderer.info.render.calls; this.stats.tris = this.renderer.info.render.triangles;
     if (fps < 45) { this.slow = (this.slow || 0) + 1; this.fast = 0; } else if (fps > 57) { this.fast = (this.fast || 0) + 1; this.slow = 0; }
-    // never below 0.75 of the device ratio cap: lower than that the picture turns to mush (Low Power Mode runs at 30 fps)
-    if (this.slow >= 2 && this.dprScale > 0.75) { this.dprScale = Math.max(0.75, this.dprScale - 0.08); this.slow = 0; this.applyDpr(); }
-    if (this.fast >= 6 && this.dprScale < 1) { this.dprScale = Math.min(1, this.dprScale + 0.08); this.fast = 0; this.applyDpr(); }
+    // never below 0.75 of the device ratio cap: lower than that the picture turns to mush (Low Power Mode runs at 30 fps).
+    // Round 3: with fps hovering around the thresholds the scaler went down and up every few seconds (each step a
+    // resize); now a step up waits 20 s after the last change, and after 4 changes the scale stays where it is.
+    const now = this.elapsed, cool = now - (this.dprAt ?? -99), cur = this.pendingDpr || this.dprScale;
+    this.dprChanges = this.dprChanges || 0;
+    if (this.dprChanges < 4) {
+      if (this.slow >= 2 && cur > 0.75 && cool > 3) { this.pendingDpr = Math.max(0.75, cur - 0.08); this.slow = 0; this.dprAt = now; this.dprChanges++; }
+      else if (this.fast >= 6 && cur < 1 && cool > 20) { this.pendingDpr = Math.min(1, cur + 0.08); this.fast = 0; this.dprAt = now; this.dprChanges++; }
+    }
     const f = $('fps');
     if (this.auto || new URLSearchParams(location.search).has('fps')) { f.classList.remove('hidden'); f.textContent = `${Math.round(fps)} fps · dpr ${this.renderer.getPixelRatio().toFixed(2)} · ${this.seg} · z ${this.hero.pos.z.toFixed(0)} · calls ${this.stats.calls}`; }
   }
@@ -610,7 +624,7 @@ class Game3D {
     for (const [i, k] of this.npc.kids.entries()) { k.show(true); k.place(L.kids[i].x, 0, L.kids[i].z, -1.2 + i); }
     this.ball.p.copy(L.ball); this.ball.v.set(0, 0, 0); this.ball.live = true; this.ball.m.visible = true; this.ball.kicked = false;
     this.play('street');
-    if (!fromCp) this.toast(this.isTouch ? { ar: 'الإبهام الشمال للمشي (زقّه للآخر تجري)، واسحب على اليمين للكاميرا', en: 'Left thumb moves (push it all the way to sprint), drag the right side to look' } : { ar: 'WASD للمشي، الماوس للكاميرا، Shift للجري، Space للنط، J للنبّوت', en: 'WASD move, mouse look, Shift sprint, Space jump, J or click: staff' }, 4.5);
+    if (!fromCp) this.toast(I3.touch ? { ar: 'الإبهام الشمال للمشي (زقّه للآخر تجري)، واسحب على اليمين للكاميرا', en: 'Left thumb moves (push it all the way to sprint), drag the right side to look' } : { ar: 'WASD للمشي، الماوس للكاميرا، Shift للجري، Space للنط، J للنبّوت', en: 'WASD move, mouse look, Shift sprint, Space jump, J or click: staff' }, 4.5);
   }
   spawnStreetTok(x, z, vx, vz, tint) {
     const t = { tok: makeTok(this.scene, tint), x, z, vx, vz, honk: false, hit: false };
@@ -654,7 +668,7 @@ class Game3D {
       this.kidsStep(dt);
       this.thiefGlimpse(dt);
       // obstacle hints stay up from 9 m before the obstacle until he is past it
-      for (const L of this.level.laundry) if (L.z < PLAZA_Z && L.z > -190 && z - L.z < 9 && z - L.z > -0.4 && h.pos.y < 1) this.stickyHint('laundry', { ar: 'غسيل واطي! اتزحلق تحته (أو امشي عليه وهتوطّي)', en: this.isTouch ? 'Low laundry! Slide button, or just walk into it and he ducks' : 'Low laundry! Slide (Ctrl or C), or just walk into it and he ducks' }, 'slide');
+      for (const L of this.level.laundry) if (L.z < PLAZA_Z && L.z > -190 && z - L.z < 9 && z - L.z > -0.4 && h.pos.y < 1) this.stickyHint('laundry', { ar: 'غسيل واطي! اتزحلق تحته (أو امشي عليه وهتوطّي)', en: I3.touch ? 'Low laundry! Slide button, or just walk into it and he ducks' : 'Low laundry! Slide (Ctrl or C), or just walk into it and he ducks' }, 'slide');
       for (const w of h.body.walls) if (w.box.kind === 'laundry' && !w.box.barked) { w.box.barked = true; this.voice.bark('s5', 'laundry', 10); }
       if (z < M.wall + 9 && z > M.wall + 0.5 && h.pos.y < 0.5) this.stickyHint('vault', { ar: 'اجري ونُط عشان تعدّي من فوق السور الواطي', en: 'Run and jump to vault the low wall' }, 'jump');
       if (z < M.barrier + 9 && z > M.barrier + 0.5 && h.pos.y < 1.5) this.stickyHint('climb', { ar: 'اجري على الحاجز ونُط... هتطلع عليه', en: 'Run at the barrier and jump to climb it' }, 'jump');
@@ -844,7 +858,7 @@ class Game3D {
     this.cam.mode = 'vehicle';
     this.engine.start();
     this.play('chase');
-    this.hint('boost', { ar: 'خبّط في توكتوك الحرامي... زرار النبّوت = بوست', en: this.isTouch ? 'Ram his tok-tok! Staff button = boost' : 'Ram his tok-tok! Shift or Space = boost' }, 3.2, 'attack');
+    this.hint('boost', { ar: 'خبّط في توكتوك الحرامي... زرار النبّوت = بوست', en: I3.touch ? 'Ram his tok-tok! Staff button = boost' : 'Ram his tok-tok! Shift or Space = boost' }, 3.2, 'attack');
   }
   seatRiders() {
     const C = this.chase, h = this.hero, P = C.player, T = C.thief;
@@ -956,7 +970,7 @@ class Game3D {
     F.start(this.fighters);
     h.targets = this.fighters;
     this.play('fight');
-    this.hint('fight', { ar: 'لما الواد ينوّر برتقاني... صدّ أو اتفادى!', en: this.isTouch ? 'When a thug glows orange: block or dodge!' : 'When a thug glows orange: block (K / right click) or dodge (Ctrl)' }, 3.5, 'block');
+    this.hint('fight', { ar: 'لما الواد ينوّر برتقاني... صدّ أو اتفادى!', en: I3.touch ? 'When a thug glows orange: block or dodge!' : 'When a thug glows orange: block (K / right click) or dodge (Ctrl)' }, 3.5, 'block');
   }
   onFight(e, f) {
     if (e === 'telegraph') { sfx3.telegraph(); if (Math.random() < 0.3) this.voice.bark('f7', 'f7', 10); }
@@ -1155,6 +1169,7 @@ class Game3D {
   fail(kind) {
     if (this.state !== 'play' || this.mode !== 'play') return;
     this.state = 'fail'; this.deaths++;
+    this.engine.stop();
     this.log('fail', kind, { seg: this.seg, z: Math.round(this.hero.pos.z) });
     this.showControls(false);
     const T = {
@@ -1168,8 +1183,8 @@ class Game3D {
     if (this.auto) setTimeout(() => this.retry(), 800);
   }
   retry() { this.ui.screen(null); this.state = 'play'; this.restoreCp(); }
-  pause() { if (this.state !== 'play') return; this.state = 'paused'; this.ui.screen('screen-pause'); clearInput3D(); I3.enabled = false; this.voice.stop(); }
-  resume() { if (this.state !== 'paused') return; audioInit('resume'); this.ui.screen(null); this.state = 'play'; I3.enabled = this.mode === 'play'; clearInput3D(); this.last = performance.now(); }
+  pause() { if (this.state !== 'play') return; this.state = 'paused'; this.ui.screen('screen-pause'); clearInput3D(); I3.enabled = false; this.voice.stop(); this.engine.mute(true); }
+  resume() { if (this.state !== 'paused') return; audioInit('resume'); this.engine.mute(false); this.ui.screen(null); this.state = 'play'; I3.enabled = this.mode === 'play'; clearInput3D(); this.last = performance.now(); }
   restartCp() { this.ui.screen(null); this.state = 'play'; this.restoreCp(); }
   again() { this.ui.screen(null); this.state = 'play'; this.resetRun(); this.cp = this.defaultCp('street'); this.restoreCp(); }
   exit() {

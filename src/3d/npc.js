@@ -17,7 +17,7 @@ function tintedMaterial(src, color, skinDark) {
   const m = src.clone();
   const c = new THREE.Color(color || 0xffffff);
   m.onBeforeCompile = (sh) => {
-    patchRimFill(sh, { fill: 0.2, rimK: 0.45 });
+    patchRimFill(sh, { fill: 0.1, rimK: 0.2 });
     if (!color) return;
     sh.uniforms.uTint = { value: new THREE.Vector3(c.r, c.g, c.b) };
     sh.uniforms.uSkin = { value: skinDark || 0 };
@@ -38,36 +38,111 @@ function tintedMaterial(src, color, skinDark) {
   return m;
 }
 
-// Townspeople in galabeyas (round 2): the hero's own model (he wears one) without the staff. The dark robe is
-// recoloured below the neck, chosen by bind-pose height (so the face and beard never change) and by darkness
-// (so the tan hands do not); the light head wrap can take a second colour. Folds are kept.
+// Townspeople in galabeyas: the hero's own model (he wears one), so in round 2 they read as Radwan's clones
+// (Mzee: "the NPC at the start looks like the main character"; they even carried his crate). Round 3, same rig,
+// no new models: never the staff or the crate, a body of their own (shorter or taller, thinner or heavier), no
+// white turban (a white kufi cap, a dark scarf wrap, or a bare head of grey or black hair), robes away from his
+// brown (blues, greys, white, pin stripes) and a beard of their own (grey, or a moustache only).
+// The robe is recoloured below the neck by bind-pose height and darkness (so the tan hands do not change).
 const galCache = new Map();
-function galabeyaMaterial(src, robe, wrap, neckY) {
-  const key = robe + '|' + (wrap || 0);
+// head: 'scarf' (the wrap, dark), 'kufi' (a low white cap), 'hair' (bare head, uHair colour)
+// beard: 0 his own, 1 grey, 2 moustache only (the chin shaved)
+function galabeyaMaterial(src, o, H) {
+  const key = [o.robe, o.wrap || 0, o.head || 'scarf', o.hair || 0, o.beard || 0, o.stripe || 0].join('|');
   if (galCache.has(key)) return galCache.get(key);
   const m = src.clone();
-  const r = new THREE.Color(robe), w = new THREE.Color(wrap || 0xffffff);
+  const r = new THREE.Color(o.robe), w = new THREE.Color(o.wrap || 0x2c2723), hair = new THREE.Color(o.hair || 0x1c1814), st = new THREE.Color(o.stripe || 0xffffff);
+  const mode = { scarf: 0, kufi: 1, hair: 2 }[o.head || 'scarf'];
   m.onBeforeCompile = (sh) => {
-    patchRimFill(sh, { fill: 0.2, rimK: 0.45 });
+    patchRimFill(sh, { fill: 0.1, rimK: 0.2 });
     sh.uniforms.uRobe = { value: new THREE.Vector3(r.r, r.g, r.b) };
-    sh.uniforms.uWrap = { value: new THREE.Vector4(w.r, w.g, w.b, wrap ? 1 : 0) };
-    sh.uniforms.uNeck = { value: neckY };
-    sh.vertexShader = 'varying float vObjY;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vObjY = position.y;');
-    sh.fragmentShader = 'uniform vec3 uRobe; uniform vec4 uWrap; uniform float uNeck; varying float vObjY;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+    sh.uniforms.uWrap = { value: new THREE.Vector3(w.r, w.g, w.b) };
+    sh.uniforms.uHair = { value: new THREE.Vector3(hair.r, hair.g, hair.b) };
+    sh.uniforms.uStripe = { value: new THREE.Vector4(st.r, st.g, st.b, o.stripe ? 1 : 0) };
+    sh.uniforms.uHead = { value: new THREE.Vector4(mode, o.beard || 0, H.capY, H.mouthY) };
+    sh.uniforms.uNeck = { value: H.neckY };
+    sh.vertexShader = 'attribute float aTurb;\nvarying float vObjY; varying float vObjX; varying float vTurb;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vObjY = position.y; vObjX = position.x; vTurb = aTurb;');
+    sh.fragmentShader = 'uniform vec3 uRobe; uniform vec3 uWrap; uniform vec3 uHair; uniform vec4 uStripe; uniform vec4 uHead; uniform float uNeck; varying float vObjY; varying float vObjX; varying float vTurb;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       {
         vec3 c = diffuseColor.rgb;
         float lum = dot(c, vec3(0.3, 0.55, 0.15));
         float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b)), sat = (mx - mn) / (mx + 1e-4);
         float body = step(vObjY, uNeck);
         float robe = body * smoothstep(0.15, 0.07, lum);
-        diffuseColor.rgb = mix(c, uRobe * (0.32 + lum * 9.0), robe);
-        float wrapM = (1.0 - body) * uWrap.w * smoothstep(0.22, 0.4, lum) * smoothstep(0.3, 0.12, sat);
-        diffuseColor.rgb = mix(diffuseColor.rgb, uWrap.rgb * (0.4 + lum * 0.9), wrapM);
+        // pin stripes down the robe (anti-aliased, fading out when they get thinner than a pixel)
+        vec3 rc = uRobe;
+        if (uStripe.w > 0.5) {
+          float f = vObjX * 34.0, fw = fwidth(f), e = fract(f);
+          float sm = smoothstep(0.78 - fw, 0.78 + fw, e) * (1.0 - smoothstep(0.93 - fw, 0.93 + fw, e));
+          rc = mix(rc, uStripe.rgb, mix(sm, 0.15, smoothstep(0.25, 0.6, fw)));
+        }
+        diffuseColor.rgb = mix(c, rc * (0.32 + lum * 9.0), robe);
+        // Radwan's grey shawl over the shoulder (light, unsaturated, below the neck) melts into the robe, so his
+        // silhouette stays his own (the colour test runs on linear values: skin is far more saturated)
+        float shawl = body * smoothstep(0.07, 0.11, lum) * smoothstep(0.3, 0.16, sat);
+        diffuseColor.rgb = mix(diffuseColor.rgb, rc * (0.62 + lum * 1.6), shawl);
+        // head: the turban cloth (vTurb, from the vertices) becomes a dark wrap, a white cap over hair, or hair
+        float head = (1.0 - body) * clamp(vTurb, 0.0, 1.0);
+        float folds = clamp(lum * 1.6, 0.35, 1.2);
+        vec3 hc = uHead.x < 0.5 ? uWrap * folds * 1.1
+          : uHead.x < 1.5 ? mix(uHair * (0.6 + 0.5 * lum), vec3(0.93, 0.92, 0.88) * folds, step(uHead.z, vObjY))
+          : uHair * (0.55 + 0.6 * lum);
+        diffuseColor.rgb = mix(diffuseColor.rgb, hc, head);
+        // beard: dark, unsaturated texels of the face
+        float face = (1.0 - body) * (1.0 - clamp(vTurb * 2.0, 0.0, 1.0));
+        // beard and eyebrows: the darkest texels of the face (linear lum under ~0.05; skin is above ~0.1)
+        float beard = face * smoothstep(0.075, 0.035, lum);
+        if (uHead.y > 0.5 && uHead.y < 1.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.41, 0.39) * (0.7 + lum * 6.0), beard * 0.9);
+        if (uHead.y > 1.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.17, 0.09) * (0.8 + lum * 3.0), beard * step(vObjY, uHead.w));
       }`);
   };
-  m.customProgramCacheKey = () => 'gal';
+  m.customProgramCacheKey = () => 'gal3';
   galCache.set(key, m);
   return m;
+}
+
+// Head analysis of the hero mesh, once: which vertices are the turban (aTurb, 0..1), and a second geometry
+// for the cap and bare-head variants with the turban pulled down and in to the skull (the vertices are moved
+// in the bind pose, so the skinning still holds; nothing at the turban's lower edge moves, so no seams open).
+let headCache = null;
+function headInfo(mesh) {
+  if (headCache) return headCache;
+  const geo = mesh.geometry, pos = geo.attributes.position, uv = geo.attributes.uv, n = pos.count;
+  geo.computeBoundingBox();
+  const bb = geo.boundingBox, top = bb.max.y, neckY = bb.min.y + (top - bb.min.y) * 0.835, hh = top - neckY;
+  // the texture, small, to tell the cream turban cloth from skin where the two meet
+  let px = null; const W = 256;
+  try { const c = document.createElement('canvas'); c.width = c.height = W; const x = c.getContext('2d'); x.drawImage(mesh.material.map.image, 0, 0, W, W); px = x.getImageData(0, 0, W, W).data; } catch (e) {}
+  const yl = neckY + hh * 0.5, yt = neckY + hh * 0.66;   // below yl never turban; above yt always
+  const turb = new Float32Array(n);
+  let cx = 0, cz = 0, k = 0;
+  for (let i = 0; i < n; i++) {
+    const y = pos.getY(i); if (y < yl) continue;
+    let t = y > yt ? 1 : 0;
+    if (!t && px) {
+      let u = uv.getX(i), v = uv.getY(i); u -= Math.floor(u); v -= Math.floor(v);
+      const q = (Math.min(W - 1, Math.floor(v * W)) * W + Math.min(W - 1, Math.floor(u * W))) * 4;
+      const r = px[q] / 255, g = px[q + 1] / 255, b = px[q + 2] / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      if ((0.3 * r + 0.55 * g + 0.15 * b) > 0.36 && (mx - mn) / (mx + 1e-4) < 0.36) t = 1;
+    }
+    turb[i] = t;
+    if (y > yt) { cx += pos.getX(i); cz += pos.getZ(i); k++; }
+  }
+  geo.setAttribute('aTurb', new THREE.BufferAttribute(turb, 1));
+  cx /= k || 1; cz /= k || 1;
+  // the low variant: everything above the brow line squashed to 40% height and pulled 22% toward the centre
+  const flat = geo.clone(), fp = flat.attributes.position;
+  for (let i = 0; i < n; i++) {
+    const y = fp.getY(i); if (y <= yl) continue;
+    const w = Math.min(1, (y - yl) / (top - yl));
+    fp.setY(i, yl + (y - yl) * (1 - 0.6 * w));
+    const s = 1 - 0.22 * w; fp.setX(i, cx + (fp.getX(i) - cx) * s); fp.setZ(i, cz + (fp.getZ(i) - cz) * s);
+  }
+  fp.needsUpdate = true; flat.computeBoundingBox(); flat.computeBoundingSphere();
+  // the cap line (after squashing): the top ~40% of the head is the white kufi
+  // the kufi: the top 45% of the squashed head; under it, hair
+  headCache = { neckY, flat, capY: yl + (top - yl) * 0.4 * 0.55, mouthY: neckY + hh * 0.22 };
+  return headCache;
 }
 
 export class Npc {
@@ -75,23 +150,27 @@ export class Npc {
     this.phys = phys;
     const gal = !!o.robe;
     this.model = SkeletonUtils.clone((gal ? A.glb.hero : A.glb.mango_thief).scene);
-    let neckY = 0;
-    if (gal) {
-      const staff = this.model.getObjectByName('Staff'); if (staff) staff.visible = false;
-      this.model.traverse((x) => { if (x.isSkinnedMesh && x.name !== 'Staff') { x.geometry.computeBoundingBox(); const b = x.geometry.boundingBox; neckY = b.min.y + (b.max.y - b.min.y) * 0.835; } });
-    }
+    let H = null;
     this.model.traverse((x) => {
-      if (x.isMesh) {
-        x.castShadow = true; x.receiveShadow = true; x.frustumCulled = false;
-        x.material = gal ? galabeyaMaterial(x.material, o.robe, o.wrap, neckY) : tintedMaterial(x.material, o.tint || 0, o.skin);
-      }
+      if (!x.isMesh) return;
+      // only the body: never the staff or the mango crate (Hero parents the crate to his shoulder bone, and the
+      // clone copied it: round 2's townspeople walked around with Radwan's crate)
+      if (gal && (!x.isSkinnedMesh || x.name === 'Staff')) { x.visible = false; return; }
+      x.castShadow = true; x.receiveShadow = true; x.frustumCulled = false;
+      if (gal) {
+        H = headInfo(x);
+        if (o.head === 'kufi' || o.head === 'hair') x.geometry = H.flat;
+        x.material = galabeyaMaterial(x.material, o, H);
+      } else x.material = tintedMaterial(x.material, o.tint || 0, o.skin);
     });
     this.root = new THREE.Group(); this.root.add(this.model); scene.add(this.root);
-    if (o.scale) this.model.scale.setScalar(o.scale);
+    // build: o.scale overall, o.build [width, height] on top (heavier = wider, taller = longer)
+    const sc = o.scale || 1, bw = o.build ? o.build[0] : 1, bh = o.build ? o.build[1] : 1;
+    this.model.scale.set(sc * bw, sc * bh, sc * bw);
     this.anim = new Anim(this.model, gal ? A.clips.hero : A.clips.mango_thief);
     this.anim.play('idle', { loop: true });
     this.anim.actions.idle.time = Math.random() * 2;
-    this.body = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), r: 0.3 * (o.scale || 1), h: 1.7 * (o.scale || 1), onGround: true, walls: [] };
+    this.body = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), r: 0.3 * sc * bw, h: 1.7 * sc * bh, onGround: true, walls: [] };
     this.yaw = 0; this.active = true; this.name = o.name || 'npc';
     this.head = null; this.model.traverse((x) => { if (x.isBone && x.name === 'Head') this.head = x; });
   }

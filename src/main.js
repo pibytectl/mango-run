@@ -11,7 +11,10 @@ const DEBUG_AUTO = Q.get('debug') === 'auto';
 const DEBUG_AUTO3D = Q.get('debug') === 'auto3d';
 const START_SEG = Q.has('seg') ? +Q.get('seg') : null;
 const SHOW_FPS = Q.has('fps') || DEBUG_AUTO;
-const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+// A phone or tablet: the primary pointer is coarse. A touchscreen laptop has touch too, but its primary
+// pointer is fine (mouse or touchpad): it starts with mouse/keyboard controls (round 3: Mzee's laptop showed
+// the touch overlay and the mouse did nothing). The 3D mode switches with the input actually used.
+const isTouch = matchMedia('(pointer: coarse)').matches || (('ontouchstart' in window || navigator.maxTouchPoints > 0) && !matchMedia('(any-pointer: fine)').matches);
 if (!isTouch) document.body.classList.add('desktop');
 
 const ui = new UI();
@@ -111,7 +114,6 @@ for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) a
 
 // ---------------------------------------------------------------- buttons
 const on = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); sfx.tap(); fn(); });
-on('btn-start', () => startGame());
 on('btn-start3d', () => start3D());
 on('btn-how', () => { ui.screen('screen-how'); });
 on('btn-how-close', () => { ui.screen('screen-title'); });

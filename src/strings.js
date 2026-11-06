@@ -17,8 +17,8 @@ export const INTRO = [
     ar: 'العصرية، في موقف الميكروباص. رضوان جاي من الصعيد على فرح ابن أخوه، ومعاه أحلى قفص مانجا من جنينة أبوه.',
     en: 'Late afternoon at the microbus stand. Radwan has come up from Upper Egypt for his nephew\'s wedding, with the finest crate of mangoes from his father\'s orchard.' },
   { who: 'hero',
-    ar: 'إيه ده يا جدع؟ الورقة مكتوب فيها موقف إمبابة... بس ده ولا شبه الرسمة خالص!',
-    en: 'What\'s this, man? The paper says the Imbaba stand... but this looks nothing like the drawing!' },
+    ar: 'إيه ده يا جدع؟ الورقة مكتوب فيها موقف إمبابة... بس ده ولا شبه الصورة خالص!',
+    en: 'What\'s this, man? The paper says the Imbaba stand... but this looks nothing like the photo!' },
   { who: 'driver',
     ar: 'يا حاج ده آخر الخط! المعدية في الناحية التانية خالص، على النيل. وآخر نقلة قبل المغرب!',
     en: 'Hajj, this is the end of the line! The ferry is way over on the other side, on the Nile. Last crossing is before sunset!' },
@@ -106,13 +106,9 @@ export const UI = {
 export const HOWTO = [
   { k: 'الهدف', ar: 'وصّل قفص المانجا للمعدية قبل ما الشمس تغيب.', en: 'Get the mango crate to the ferry before sunset.' },
   { k: 'المانجا', ar: 'لو اتخبطت أو وقعت، المانجا بتقع من القفص. لِمّها بسرعة قبل ما تضيع!', en: 'Get hit or fall and mangoes spill. Grab them fast before they\'re gone!' },
-  { k: 'النبّوت', ar: 'وإنت بتجري: اتسند عليه ونُط بعيد. قدام كورة أو معزة: اضرب الكورة أو زُق المعزة بالراحة.', en: 'While running: vault far. Near a ball or a goat: bat the ball or gently nudge the goat.' },
-  { k: 'الموبايل', ar: '◀ ▶ تحت إيدك الشمال للمشي، واسحب صباعك لتحت عليهم (أو دوس ▼) عشان توطّي. ⤒ تحت إيدك اليمين للنط (دوس أطول تنط أعلى)، وزرار النبّوت جنبه.', en: 'Left thumb: move pad (swipe down on it, or tap the small down button, to duck). Right thumb: jump (hold for higher), staff button beside it.' },
-  { k: 'الكيبورد', ar: 'الأسهم أو WASD للمشي والتوطية، Space للنط، X أو J للنبّوت، Esc للاستراحة.', en: 'Arrows or WASD, Space to jump, X or J for the staff, Esc to pause.' },
-  { k: 'النجوم', ar: 'نجمة لما توصل، اتنين لو معاك ٩ مانجايات أو أكتر، وتلاتة لو الاتناشر كاملين.', en: 'One star for arriving, two for 9+ mangoes, three for all 12.' },
-  { k: '3D', ar: 'موبايل: إبهامك الشمال في أي حتة = عصا التحريك (زقّها للآخر تجري)، واسحب على اليمين تلف الكاميرا. الأزرار: النبّوت، النط، الزحلقة/التفادي، والصدّ.', en: 'Phone: left thumb anywhere is the stick (push it all the way to sprint), drag on the right to look. Buttons: staff, jump, slide/dodge, block.' },
-  { k: '3D', ar: 'كيبورد: WASD، الماوس للكاميرا، Shift جري، Space نط، J أو كليك نبّوت، K أو كليك يمين صدّ، Ctrl أو C زحلقة/تفادي، Q تثبيت على الخصم.', en: 'Keys: WASD, mouse look, Shift sprint, Space jump, J/click staff, K/right-click block, Ctrl/C slide or dodge, Q lock-on.' },
-  { k: 'نجوم 3D', ar: 'نجمة لـ١٠ مانجايات أو أكتر، نجمة لو وصلت والشمس لسه فاضل لها دقيقة، ونجمة لو كسبت خناقة الحارة من أول مرة.', en: 'One star each: 10+ mangoes, a minute of sun to spare, the alley fight won on the first try.' },
+  { k: 'الموبايل', ar: 'إبهامك الشمال في أي حتة = عصا التحريك (زقّها للآخر تجري)، واسحب على اليمين تلف الكاميرا. الأزرار: النبّوت، النط، الزحلقة/التفادي، والصدّ.', en: 'Left thumb anywhere is the stick (push it all the way to sprint), drag on the right to look. Buttons: staff, jump, slide/dodge, block.' },
+  { k: 'الكيبورد', ar: 'WASD للمشي، الماوس للكاميرا (دوس على الصورة)، Shift جري، Space نط، J أو كليك نبّوت، K أو كليك يمين صدّ، Ctrl أو C زحلقة/تفادي، Q تثبيت على الخصم، Esc استراحة.', en: 'WASD move, mouse look (click the picture), Shift sprint, Space jump, J/click staff, K/right-click block, Ctrl/C slide or dodge, Q lock-on, Esc pause.' },
+  { k: 'النجوم', ar: 'نجمة لـ١٠ مانجايات أو أكتر، نجمة لو وصلت والشمس لسه فاضل لها دقيقة، ونجمة لو كسبت خناقة الحارة من أول مرة.', en: 'One star each: 10+ mangoes, a minute of sun to spare, the alley fight won on the first try.' },
 ];
 
 const AR_DIGITS = '٠١٢٣٤٥٦٧٨٩';

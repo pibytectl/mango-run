@@ -27,7 +27,7 @@ export class Voice {
     if (gen !== this.gen) return;
     if (buf) { this.loaded++; dur = buf.duration; } else this.failed++;
     if (buf && ctx && soundOn()) {
-      const src = ctx.createBufferSource(); src.buffer = buf;
+      const src = ctx.createBufferSource(); src.buffer = buf; src.__tag = 'voice';
       const g = ctx.createGain(); g.gain.value = 1;
       src.connect(g); g.connect(voiceGain); src.start();
       this.cur = { src, id };

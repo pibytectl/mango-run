@@ -740,28 +740,35 @@ export class Level {
   // rear window), roof rack with luggage, dust low on the body, Arabic route text painted on both sides.
   microbus(x, z, yaw, body) {
     const parts = [];
-    const add = (w, h, d, cx, cy, cz, col) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(cx, cy, cz); paintGeo(g, col); parts.push(g); };
-    const cyl = (r, l, cx, cy, cz, col, axis = 'z', seg = 10) => { const g = new THREE.CylinderGeometry(r, r, l, seg); if (axis === 'z') g.rotateZ(Math.PI / 2); else if (axis === 'x') g.rotateX(Math.PI / 2); g.translate(cx, cy, cz); paintGeo(g, col); parts.push(g); };
+    const add = (w, h, d, cx, cy, cz, col) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(cx, cy, cz); paintGeo(g, col); parts.push(g.toNonIndexed()); };
+    const cyl = (r, l, cx, cy, cz, col, axis = 'z', seg = 10) => { const g = new THREE.CylinderGeometry(r, r, l, seg); if (axis === 'z') g.rotateZ(Math.PI / 2); else if (axis === 'x') g.rotateX(Math.PI / 2); g.translate(cx, cy, cz); paintGeo(g, col); parts.push(g.toNonIndexed()); };
     const white = body, blue = [0.16, 0.33, 0.62], dust = [0.62, 0.55, 0.45], dark = [0.06, 0.06, 0.07], trim = [0.75, 0.74, 0.7], glass = [0.1, 0.12, 0.15];
     const L = 4.8, W = 1.86, hl = L / 2;
-    add(W, 0.42, L, 0, 0.62, 0, blue);                      // blue lower half
-    add(W + 0.01, 0.12, L + 0.01, 0, 0.47, 0, dust);         // dusty sill
-    add(W, 0.42, L, 0, 1.04, 0, white);                      // white upper body
-    add(W + 0.02, 0.08, L + 0.02, 0, 1.18, 0, blue);         // belt stripe
-    add(W - 0.04, 0.66, L - 0.7, 0, 1.55, -0.3, glass);      // window band
-    for (const pz of [-2.25, -1.45, -0.62, 0.2, 0.95]) add(W, 0.66, 0.1, 0, 1.55, pz, white); // pillars
-    add(W, 0.14, L - 0.25, 0, 1.93, -0.1, white);            // roof
-    for (const sx of [-1, 1]) cyl(0.11, L - 0.3, sx * (W / 2 - 0.08), 1.9, -0.12, white, 'x', 8); // rounded roof edges
-    // front: slightly sloped windscreen, short nose, grille, lamps, bumper, plate
-    { const g = new THREE.BoxGeometry(W - 0.08, 0.7, 0.08); g.rotateX(-0.28); g.translate(0, 1.56, hl - 0.25); paintGeo(g, glass); parts.push(g); }
-    add(W, 0.3, 0.32, 0, 1.3, hl - 0.18, white);
+    // round 3 (Mzee: the microbus right behind Radwan in the opening shot was plain boxes): the body is a rounded
+    // extrusion (rounded roof edges, rounded nose and tail), with the blue skirt, the belt stripe and the dark
+    // window band wrapped round it as slightly larger rounded bands
+    const slab = (w, y0, y1, len, rT, rB, bev, col) => {
+      rT = Math.max(0.015, rT); rB = Math.max(0.015, rB);   // a zero radius makes a degenerate curve (a spike)
+      const sw = w - 2 * bev, sh = y1 - y0 - 2 * bev, x0 = -sw / 2, yb = y0 + bev, S = new THREE.Shape();
+      S.moveTo(x0 + rB, yb); S.lineTo(x0 + sw - rB, yb); S.quadraticCurveTo(x0 + sw, yb, x0 + sw, yb + rB);
+      S.lineTo(x0 + sw, yb + sh - rT); S.quadraticCurveTo(x0 + sw, yb + sh, x0 + sw - rT, yb + sh);
+      S.lineTo(x0 + rT, yb + sh); S.quadraticCurveTo(x0, yb + sh, x0, yb + sh - rT);
+      S.lineTo(x0, yb + rB); S.quadraticCurveTo(x0, yb, x0 + rB, yb);
+      const g = new THREE.ExtrudeGeometry(S, { depth: len - 2 * bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 3, curveSegments: 4 });
+      g.translate(0, 0, -(len - 2 * bev) / 2); g.deleteAttribute('uv'); g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      paintGeo(g, col); parts.push(g.index ? g.toNonIndexed() : g);
+    };
+    slab(W, 0.28, 2.0, L, 0.26, 0.05, 0.12, white);                 // the body
+    slab(W + 0.014, 0.3, 0.83, L + 0.014, 0.0, 0.05, 0.1, blue);      // blue lower half
+    slab(W + 0.02, 0.44, 0.52, L + 0.02, 0, 0, 0.03, dust);           // dusty sill
+    slab(W + 0.016, 1.13, 1.21, L + 0.016, 0, 0, 0.03, blue);         // belt stripe
+    slab(W + 0.012, 1.27, 1.84, L + 0.012, 0.06, 0.02, 0.1, glass);   // window band, windscreen and rear window
+    for (const pz of [-1.45, -0.62, 0.2, 0.95]) add(W + 0.03, 0.57, 0.1, 0, 1.555, pz, white); // pillars
     add(W - 0.2, 0.2, 0.05, 0, 0.82, hl + 0.01, [0.2, 0.2, 0.22]);
     for (const hx of [-0.68, 0.68]) add(0.3, 0.16, 0.05, hx, 0.98, hl + 0.01, [1, 0.95, 0.78]);
     add(W + 0.06, 0.16, 0.18, 0, 0.42, hl + 0.06, [0.22, 0.22, 0.22]); add(W + 0.06, 0.16, 0.18, 0, 0.42, -hl - 0.06, [0.22, 0.22, 0.22]);
     add(0.5, 0.14, 0.03, 0, 0.62, hl + 0.03, [0.95, 0.95, 0.95]); add(0.5, 0.04, 0.031, 0, 0.67, hl + 0.031, blue);
     for (const sx of [-1, 1]) { add(0.05, 0.05, 0.25, sx * (W / 2 + 0.12), 1.45, hl - 0.4, dark); add(0.06, 0.2, 0.12, sx * (W / 2 + 0.24), 1.45, hl - 0.3, dark); } // mirrors
-    // rear: window, lamps
-    add(W - 0.3, 0.5, 0.05, 0, 1.55, -hl - 0.01, glass);
     for (const hx of [-0.8, 0.8]) add(0.14, 0.3, 0.05, hx, 0.98, -hl - 0.01, [0.75, 0.12, 0.08]);
     // open sliding door on the right (+x): a dark doorway, the door panel slid back outside the body
     add(0.04, 1.3, 0.95, W / 2 + 0.005, 1.0, 0.75, dark);

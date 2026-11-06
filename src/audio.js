@@ -77,14 +77,14 @@ export function audioWake(why = 'visible') {
 }
 export function audioState() { return ctx ? ctx.state : 'none'; }
 // tests only (window.__saidi.audio)
-export function audioDebug() { return { ctx, htmlEl, log: audioLog, music: music.name, ambient: ambWant.name && beds[ambWant.name] && beds[ambWant.name].src ? ambWant.vol : null, ambientBed: ambWant.name, session: navigator.audioSession ? navigator.audioSession.type : null }; }
+export function audioDebug() { return { ctx, htmlEl, log: audioLog, loops: loopReport, music: music.name, ambient: ambWant.name && beds[ambWant.name] && beds[ambWant.name].src ? ambWant.vol : null, ambientBed: ambWant.name, session: navigator.audioSession ? navigator.audioSession.type : null }; }
 
 export async function loadMusic(name, url) {
   try {
     const r = await fetch(url);
     const ab = await r.arrayBuffer();
     if (!ctx) return;
-    music.buffers[name] = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+    music.buffers[name] = loopable(await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej)), 0.03);
     if (music.want === name) playMusic(name);
   } catch (e) { console.warn('music load failed', name, e && e.message); }
 }
@@ -103,11 +103,45 @@ export function playMusic(name, vol = 0.5) {
   }
   music.name = null;
   if (!buf) return;
-  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
-  src.loopStart = 0.03; src.loopEnd = buf.duration - 0.03;
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.__tag = 'music';
   const g = ctx.createGain(); g.gain.value = 0; g.gain.setTargetAtTime(vol, now, 0.6);
-  src.connect(g); g.connect(musicGain); src.start(now, 0.03);
+  src.connect(g); g.connect(musicGain); src.start(now);
   music.src = src; music.g = g; music.name = name;
+}
+// A decoded loop made seamless (round 3). Round 2 looped from `pre` to duration - `pre` to skip encoder padding,
+// but the samples at those two points do not meet: a click on every wrap (measured on the decoded files:
+// run.mp3 jumped 0.61 at its loop point, above the music's own 99.9th-percentile sample step of 0.37; the
+// street bed 0.0095 against 0.0031). Now the loop is [pre, end - pre) copied into its own buffer, and its last
+// `pre` seconds are crossfaded (equal power) into the `pre` seconds that come just before the loop start, so the
+// wrap continues exactly where the head begins. Played with loop = true over the whole buffer.
+function loopable(buf, pre) {
+  const sr = buf.sampleRate, a = Math.round(pre * sr), n = buf.length - 2 * a;
+  if (n <= a * 4) return buf;
+  const out = ctx.createBuffer(buf.numberOfChannels, n, sr);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const s = buf.getChannelData(c), d = out.getChannelData(c);
+    d.set(s.subarray(a, a + n));
+    for (let j = 0; j < a; j++) {
+      const w = (j + 1) / a, i = n - a + j;                 // w: 0 -> 1 across the tail
+      d[i] = s[a + i] * Math.cos(w * Math.PI / 2) + s[j] * Math.sin(w * Math.PI / 2);
+    }
+  }
+  out.__loop = true;
+  return out;
+}
+// tests: how well every looping buffer wraps (sample jump at the wrap against the 99.9th percentile step)
+export function loopReport() {
+  const r = {};
+  const one = (name, b) => {
+    if (!b) return;
+    const d = b.getChannelData(0), n = d.length, st = new Float32Array(n - 1);
+    for (let i = 1; i < n; i++) st[i - 1] = Math.abs(d[i] - d[i - 1]);
+    const sorted = Array.from(st).sort((x, y) => x - y);
+    r[name] = { wrap: +Math.abs(d[0] - d[n - 1]).toFixed(4), p999: +sorted[Math.floor(sorted.length * 0.999)].toFixed(4), median: +sorted[Math.floor(sorted.length / 2)].toFixed(5) };
+  };
+  for (const [k, b] of Object.entries(music.buffers)) one('music-' + k, b);
+  for (const [k, b] of Object.entries(beds)) one('amb-' + k, b.buf);
+  return r;
 }
 // ambient beds (3D), one at a time, crossfaded: 'street' (distant traffic) and 'roof' (city from a rooftop)
 const beds = {};
@@ -121,7 +155,7 @@ async function decodeAmbient(name) {
   const b = beds[name];
   if (!ctx || !b || !b.raw || b.buf) return;
   const raw = b.raw; b.raw = null;
-  try { b.buf = await new Promise((res, rej) => ctx.decodeAudioData(raw, res, rej)); } catch (e) { return; }
+  try { b.buf = loopable(await new Promise((res, rej) => ctx.decodeAudioData(raw, res, rej)), 0.06); } catch (e) { return; }
   setAmbient(ambWant.vol, ambWant.name);
 }
 export function setAmbient(vol, name = 'street') {
@@ -131,9 +165,8 @@ export function setAmbient(vol, name = 'street') {
     const v = k === name ? vol : 0;
     if (!b.buf) { if (v > 0) decodeAmbient(k); continue; }
     if (!b.src && v > 0) {
-      const src = ctx.createBufferSource(); src.buffer = b.buf; src.loop = true;
-      src.loopStart = 0.06; src.loopEnd = b.buf.duration - 0.06; // skip the mp3 encoder padding at both ends
-      const g = ctx.createGain(); g.gain.value = 0; src.connect(g); g.connect(master); src.start(ctx.currentTime, 0.06);
+      const src = ctx.createBufferSource(); src.buffer = b.buf; src.loop = true; src.__tag = 'amb-' + k;
+      const g = ctx.createGain(); g.gain.value = 0; src.connect(g); g.connect(master); src.start(ctx.currentTime);
       b.src = src; b.g = g;
     }
     if (b.g) b.g.gain.setTargetAtTime(v, ctx.currentTime, 0.8);
@@ -183,7 +216,7 @@ export const sfx = {
   mango(i = 0) { const f = 660 * Math.pow(1.122, i % 8); tone('triangle', f, f, 0.12, 0.2); tone('sine', f * 2, f * 2, 0.08, 0.08, 0.03); },
   hurt() { tone('sawtooth', 300, 90, 0.25, 0.18); noise(0.18, 0.35, 'lowpass', 700); },
   spill() { for (let i = 0; i < 3; i++) tone('triangle', 900 - i * 160, 500 - i * 80, 0.08, 0.1, i * 0.05); },
-  horn() { for (let k = 0; k < 2; k++) { tone('square', 466, 466, 0.16, 0.08, k * 0.22); tone('square', 587, 587, 0.16, 0.06, k * 0.22); } },
+  horn() { if (!ctx || ctx.currentTime - (sfx._horn || -9) < 1.4) return; sfx._horn = ctx.currentTime; for (let k = 0; k < 2; k++) { tone('square', 466, 466, 0.16, 0.08, k * 0.22); tone('square', 587, 587, 0.16, 0.06, k * 0.22); } },
   bounce() { tone('sine', 180, 720, 0.18, 0.3); tone('square', 360, 900, 0.1, 0.05); },
   kick() { tone('sine', 160, 60, 0.1, 0.4); noise(0.05, 0.2, 'bandpass', 1200, 1); },
   whack() { tone('sine', 220, 80, 0.12, 0.45); noise(0.08, 0.4, 'bandpass', 2400, 1.5); },

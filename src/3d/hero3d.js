@@ -25,7 +25,7 @@ export class Hero {
     const g = A.glb.hero;
     this.model = g.scene;
     this.model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
-    rimFillModel(this.model, { fill: 0.24, rimK: 0.6 }, 'heroRim');
+    rimFillModel(this.model, { fill: 0.12, rimK: 0.26 }, 'heroRim');
     this.root = new THREE.Group(); this.root.add(this.model); scene.add(this.root);
     this.anim = new Anim(this.model, A.clips.hero);
     this.bones = {}; this.model.traverse((o) => { if (o.isBone) this.bones[o.name] = o; });
