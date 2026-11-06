@@ -14,6 +14,20 @@ const ROOF_ROUTE = [
   W(0, -1050), W(0, -1056),
 ];
 
+// Mission 2: the roofs from Hajja Nefisa's daughter's roof to her own. Actions: jump (at the waypoint), basket
+// (catch it if it is falling), door (through the roof door, or over the stair block), sika (chase him off),
+// alley (Sika's plank, or the detour by D), cyl (the gas cylinder up the stairs), tower (the ladder, or the
+// crates and the tank), lure (call her down)
+const R2_ROUTE = [
+  W(0, -901.4, { jump: true, sprint: true }), W(0, -908.4, { sprint: true }), W(0, -915.4, { jump: true, sprint: true }),
+  W(0, -920, { basket: true }), W(0, -927.6, { door: true }), W(0, -937, { sika: true }), W(0, -946.5), W(0, -948.8, { alley: true }),
+  W(0, -961.4, { sprint: true }), W(0, -967.5, { sprint: true }), W(0, -973.5, { jump: true, sprint: true }),
+  W(2.9, -980.5, { sprint: true }), W(3.0, -987.6), W(0.8, -990.8), W(0, -991.8), W(0, -993.6), W(0, -995.3), W(0, -997.6),
+  W(0, -1003, { sprint: true }), W(0, -1008, { sprint: true }), W(0, -1015.6, { jump: true, sprint: true }),
+  W(0, -1022, { sprint: true }), W(0, -1025.4, { sprint: true }), W(0, -1031.2, { sprint: true }), W(0, -1037.4), W(0, -1040.4),
+  W(2.9, -1046), W(3.5, -1049.1, { cyl: true }), W(3.6, -1051.6), W(3.7, -1057.4, { kitchen: true }), W(-3.2, -1059.5, { sprint: true }), W(-3.2, -1068, { tower: true }),
+];
+
 export class Bot {
   constructor(game) { this.g = game; this.inp = { world: null }; this.stuckT = 0; this.lastPos = null; this.t = 0; this.atkT = 0; this.ri = 0; this.wallStep = 0; }
   press(k) { this.inp[k + 'Pressed'] = true; }
@@ -28,7 +42,8 @@ export class Bot {
     this.t += dt;
     I.blockHeld = false; I.jumpHeld = I.jumpHeld && h.state === 'air';
     const seg = g.seg;
-    if (seg === 'street') this.street(dt);
+    if (g.m2) this.mission2(dt);
+    else if (seg === 'street') this.street(dt);
     else if (seg === 'market') this.market(dt);
     else if (seg === 'chase') this.chase(dt);
     else if (seg === 'fight') this.fight(dt);
@@ -159,6 +174,82 @@ export class Bot {
     if (w.slideAt && d < w.slideAt && h.state === 'move') this.press('slide');
     if (w.jump && d < 0.8 && h.body.onGround) { this.press('jump'); this.inp.jumpHeld = true; }
     if (d < (w.jump ? 0.5 : 0.9) || (w.jump && h.state === 'air')) this.ri++;
+  }
+  // ---------------------------------------------------------------- Mission 2
+  mission2(dt) {
+    const g = this.g, h = g.hero, p = h.pos, M = g.m2, I = this.inp;
+    // Zaghloul whistles: call her back (once, a beat after it starts)
+    if (M.whistle && M.whistle.t > 0.35 && !this.called) { this.called = true; this.press('attack'); return; }
+    if (!M.whistle) this.called = false;
+    // the finale: on top of the tower, call her when she looks this way and Zaghloul is quiet
+    if (M.lure && M.lure.on) { I.world = { x: 0, z: 0 }; if (M.lure.look > 0.15 && M.lure.whistling <= 0 && this.t - this.atkT > 0.3) { this.atkT = this.t; this.press('attack'); } return; }
+    // resync to the checkpoint after a fall or a retry
+    const sub = M.sub;
+    if (this.m2sub !== sub || (this.lastY !== undefined && Math.abs(p.y - this.lastY) > 3 && h.state === 'move')) {
+      this.m2sub = sub; let best = 0, bd = 1e9;
+      R2_ROUTE.forEach((w, i) => { const d = Math.hypot(w.x - p.x, w.z - p.z); if (w.z < p.z + 1 && d < bd) { bd = d; best = i; } }); this.ri = best; this.detour = null; this.over = null;
+    }
+    this.lastY = p.y;
+    if (this.ri >= R2_ROUTE.length) return;
+    const w = R2_ROUTE[this.ri];
+    // the falling basket: get under it
+    if (M.bk) { this.go(M.bk.to.x, M.bk.to.z, true); return; }
+    if (w.basket && M.t1 === null && M.t1armed) { this.go(w.x, w.z, true); if (p.z < -918.6) { this.inp.world = { x: 0, z: 0 }; } return; }
+    // Sika: chase him and whack him
+    const S = M.sikaS;
+    if (S && (S.st === 'sneak' || S.st === 'stun')) {
+      const sp = M.sika.pos, d = Math.hypot(sp.x - p.x, sp.z - p.z);
+      this.go(sp.x, sp.z, true);
+      if (d < 1.9 && this.t - this.atkT > 0.3) { this.atkT = this.t; this.press('attack'); }
+      return;
+    }
+    // Sika comes once Sukkara is on the coop: wait for him on C (do not start the detour mid-task)
+    if ((w.sika || w.alley) && M.t2 === null && p.z < -936) { const d = this.go(0.5, -940.5, true); if (d < 1) this.inp.world = { x: 0, z: 0 }; return; }
+    if (w.door && !M.doorBox.on === false && !this.over) this.over = 0;
+    if (w.door && this.over !== null && this.over !== undefined) return this.overStairBlock();
+    if (w.alley && !M.plankBox.on) return this.detourD();
+    if (w.cyl && M.t3 === null && !M.carrying && M.cylWorld.visible) { const c = M.cylWorld.position; this.go(c.x, c.z, false); return; }
+    if (w.kitchen && M.carrying) { const d = this.go(M.M.kitchen.x, M.M.kitchen.z, false); if (d > 0.5) return; }
+    if (w.tower) return this.climbTower();
+    const d = this.go(w.x, w.z, w.sprint && !M.carrying);
+    for (const L of g.level.laundry) if (p.z - L.z > 1.0 && p.z - L.z < 3.2 && L.bottom > p.y && L.bottom < p.y + 1.7 && h.state === 'move') { this.inp.sprint = true; this.press('slide'); }
+    if (w.jump && d < 0.8 && h.body.onGround) { this.press('jump'); I.jumpHeld = true; }
+    if (d < (w.jump ? 0.5 : 0.9) || (w.jump && h.state === 'air')) this.ri++;
+  }
+  // the long way over Umm Nadia's stair block: onto the crates, the tank, the top, then down onto C
+  overStairBlock() {
+    const g = this.g, h = g.hero, p = h.pos, I = this.inp;
+    const steps = [W(3.5, -926.2), W(3.5, -927.9, { jumpAt: 1.2 }), W(3.5, -929.2, { jumpAt: 0.9 }), W(3.3, -931.4, { jumpAt: 1.0 }), W(0, -933.4), W(0, -937.2, { sprint: true })];
+    const s = steps[this.over];
+    if (!s) { this.over = null; this.ri++; return; }
+    const d = this.go(s.x, s.z, !!s.sprint);
+    if (s.jumpAt && d < s.jumpAt && h.body.onGround && this.t - (this.jt || 0) > 0.5) { this.jt = this.t; this.press('jump'); I.jumpHeld = true; }
+    if (d < 0.6 || (this.over === 3 && p.y > 11.4) || (this.over >= 1 && this.over <= 2 && p.y > 8 + this.over * 0.7 && d < 1.2)) this.over++;
+  }
+  // round the 6.5 m alley without Sika's plank: up onto D, along it, down onto E
+  detourD() {
+    const g = this.g, h = g.hero, p = h.pos, I = this.inp;
+    const steps = [W(4.6, -947.2), W(8.8, -947.2, { jumpAt: 2.2 }), W(10.2, -952), W(10.2, -960.5), W(4.4, -961, { jumpAt: 3.0 }), W(0, -961.5)];
+    if (this.detour === null || this.detour === undefined) this.detour = 0;
+    const s = steps[this.detour];
+    if (!s) { this.detour = null; this.ri++; return; }
+    const d = this.go(s.x, s.z, true);
+    if (s.jumpAt && d < s.jumpAt && h.body.onGround && this.t - (this.jt || 0) > 0.5) { this.jt = this.t; this.press('jump'); I.jumpHeld = true; }
+    if (d < 0.7 || (this.detour === 1 && p.y > 8.2) || (this.detour === 4 && p.x < 6 && p.y < 7.6)) this.detour++;
+  }
+  // up the tower: the boy's ladder if it is there, otherwise the crates and the tank
+  climbTower() {
+    const g = this.g, h = g.hero, p = h.pos, M = g.m2, I = this.inp;
+    const top = M.M.towerTop;
+    if (p.y > top.y - 0.25) { this.go(top.x, top.z, false); return; }
+    const tz = top.z;
+    const steps = M.ladderBox.on ? [W(-3.0, tz), W(-1.9, tz), W(0, tz)] : [W(2.6, tz + 5.4), W(2.6, tz + 3.1, { jumpAt: 1.0 }), W(2.6, tz + 0.7, { jumpAt: 1.0 }), W(0.6, tz + 0.4, { jumpAt: 1.4 })];
+    this.ts = this.ts || 0;
+    if (p.y < 10.4 && this.ts > 0 && !M.ladderBox.on && h.body.onGround) this.ts = 0;
+    const s = steps[Math.min(this.ts, steps.length - 1)];
+    const d = this.go(s.x, s.z, false);
+    if (s.jumpAt && d < s.jumpAt && h.body.onGround && this.t - (this.jt || 0) > 0.5) { this.jt = this.t; this.press('jump'); I.jumpHeld = true; }
+    if (d < 0.5 && this.ts < steps.length - 1) this.ts++;
   }
   wallJump(w) {
     const g = this.g, h = g.hero, p = h.pos, I = this.inp;

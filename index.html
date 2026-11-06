@@ -51,6 +51,7 @@
   <div id="bars3d" class="hidden"><div class="lb t"></div><div class="lb b"></div><button class="skip-btn ar" id="skip3d">تخطّي ◂◂</button></div>
   <div id="subs3d" class="hidden"><div class="who ar"></div><div class="ar"></div><div class="en" dir="ltr"></div></div>
   <div id="toast" class="hidden"><div class="ar"></div><div class="en"></div></div>
+  <div id="lure3d" class="hidden"><div class="ar"></div><div class="en" dir="ltr"></div><b><i></i></b></div>
   <div id="banner" class="hidden"><div class="ar"></div><div class="en"></div></div>
 
   <div id="screen-loading" class="screen">
@@ -66,9 +67,11 @@
     <div class="title-art"><img src="assets/img/title.webp" alt=""></div>
     <div class="title-panel">
       <div class="logo ar">مشوار المانجا</div>
-      <div class="sub ar">المهمة ١ · قبل المغرب</div>
-      <div class="en sub-en" dir="ltr">The Mango Run · Mission 1: Before Sunset</div>
-      <button class="big-btn ar btn3d" id="btn-start3d">العب</button>
+      <div class="missions">
+        <button class="big-btn ar btn3d mbtn" id="btn-start3d"><b>العب المهمة ١</b><span>مشوار المانجا · قبل المغرب</span><em dir="ltr">Mission 1 · The Mango Run</em></button>
+        <button class="big-btn ar mbtn locked" id="btn-m2"><b>المهمة ٢</b><span>الحمامة الهربانة</span><em dir="ltr" class="lk">Finish Mission 1 to unlock</em><em dir="ltr" class="ul">Mission 2 · The Runaway Pigeon</em></button>
+        <div class="mbtn soon3 ar"><b>المهمة ٣</b><span>أسبوع في كشك عمّه · قريبًا</span></div>
+      </div>
       <div class="row">
         <button class="pill ar" id="btn-sound">الصوت: شغّال</button>
         <button class="pill ar" id="btn-subs">ترجمة EN: شغّالة</button>
@@ -112,11 +115,11 @@
   <div id="screen-end" class="screen hidden">
     <div class="end-wrap">
       <div class="end-main">
-        <div class="ptitle ar">المهمة الأولى خلصت!</div>
-        <div class="en small" dir="ltr">Mission 1 complete!</div>
+        <div class="ptitle ar" id="end-title">المهمة الأولى خلصت!</div>
+        <div class="en small" dir="ltr" id="end-title-en">Mission 1 complete!</div>
         <div class="stars" id="stars" dir="ltr"><span>★</span><span>★</span><span>★</span></div>
         <div class="stats">
-          <div><b class="ar" id="end-mangoes"></b><span class="ar">مانجا</span><em class="en" dir="ltr">Mangoes</em></div>
+          <div><b class="ar" id="end-mangoes"></b><span class="ar" id="end-count-ar">مانجا</span><em class="en" dir="ltr" id="end-count-en">Mangoes</em></div>
           <div><b class="ar" id="end-time"></b><span class="ar">الوقت</span><em class="en" dir="ltr">Time</em></div>
           <div class="only3d"><b class="ar" id="end-fights"></b><span class="ar">الإعادات</span><em class="en" dir="ltr">Retries</em></div>
         </div>
@@ -124,16 +127,18 @@
         <div class="ar rank" id="end-rank"></div>
         <div class="en small" id="end-rank-en" dir="ltr"></div>
         <div class="row">
+          <button class="big-btn ar hidden" id="btn-next">العب المهمة ٢</button>
           <button class="big-btn ar" id="btn-again">العب تاني</button>
           <button class="pill ar" id="btn-menu2">القائمة</button>
         </div>
       </div>
       <div class="end-next">
         <div class="ar next-h">الجاي...</div>
-        <div class="teaser"><img src="assets/img/teaser_m2.webp" alt=""><div class="tcap">
+        <div class="teaser t-m2"><img src="assets/img/teaser_m2.webp" alt=""><div class="tcap">
           <div class="ar tt">المهمة ٢ · الحمامة الهربانة</div>
-          <div class="ar td">حمامة العيلة البيضا هربت فوق السطوح ليلة الفرح... ومحدش هيرجّعها غير رضوان.</div>
-          <div class="en te" dir="ltr">Mission 2 · The Runaway Pigeon: the family's white pigeon escaped over the rooftops on the wedding night.</div>
+          <div class="ar td">سُكّرة، الحمامة البيضا اللي نطّت ورا رضوان على المعدية، هربت فوق سطوح إمبابة... ولازم ترجع برجها قبل المغرب.</div>
+          <div class="en te" dir="ltr">Mission 2 · The Runaway Pigeon: Sukkara, the white pigeon that followed Radwan onto the ferry, has escaped over the Imbaba rooftops. Get her home before sunset.</div>
+          <div class="ar open">اتفتحت! ▸</div>
         </div></div>
         <div class="teaser"><img src="assets/img/teaser_m3.webp" alt=""><div class="tcap">
           <div class="ar tt">المهمة ٣ · أسبوع في كشك عمّه</div>

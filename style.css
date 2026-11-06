@@ -307,3 +307,35 @@ body.mode3d .stats b { font-size: 22px; }
   body.mode3d .teaser img { width: 84px; height: 56px; }
   body.mode3d .td { display: none; }
 }
+
+/* ---- round 4: mission select on the title (Mission 2 unlocks after Mission 1) */
+.missions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; margin: 6px auto 2px; max-width: 360px; }
+.mbtn { display: flex; flex-direction: column; align-items: center; margin: 0 !important; padding: 4px 16px 6px !important; line-height: 1.2; }
+.mbtn b { font-size: clamp(18px, 4.6vh, 24px); font-weight: 900; }
+.mbtn span { font-size: clamp(12px, 3vh, 15px); font-weight: 700; }
+.mbtn em { font-style: normal; font-size: 11px; opacity: 0.75; }
+.mbtn.locked { background: linear-gradient(180deg, #8a7458, #5e4a34); color: rgba(255, 240, 220, 0.75); box-shadow: 0 3px 0 #3a2a1a; }
+.mbtn.locked b::after { content: ' (مقفولة)'; font-size: 0.65em; font-weight: 700; }
+.mbtn .ul { display: none; } .mbtn.locked .lk { display: block; } .mbtn:not(.locked) .lk { display: none; } .mbtn:not(.locked) .ul { display: block; }
+.mbtn.nudge { animation: nudge .35s; }
+@keyframes nudge { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.soon3 { border-radius: 14px; background: rgba(255, 220, 160, 0.08); border: 1px dashed rgba(255, 210, 140, 0.35); color: rgba(255, 240, 220, 0.6); }
+@media (max-height: 430px) { .missions { gap: 4px; } .mbtn em { display: none !important; } .soon3 { display: none; } }
+/* end screen: which teaser shows (after Mission 1 the Mission 2 card says it is open; after Mission 2 only Mission 3) */
+.teaser .open { display: none; font-weight: 900; color: #9fffb0; font-size: 13px; }
+body[data-endm="1"] .t-m2 .open { display: block; }
+body[data-endm="2"] .t-m2 { display: none; }
+/* Mission 2 HUD: the counter is corn (an inline cob), Radwan has no crate slot */
+body.m2 .ico-crate { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2c3 0 5 4.5 5 10s-2 10-5 10-5-4.5-5-10 2-10 5-10z' fill='%23f2c53d' stroke='%23955d10' stroke-width='1.2'/%3E%3Cpath d='M9.5 7h5M9 10h6M9 13h6M9.5 16h5' stroke='%23c7922a' stroke-width='1'/%3E%3Cpath d='M7 14c-3-1-4-4-3-7 2 2 3 4 3 7zM17 14c3-1 4-4 3-7-2 2-3 4-3 7z' fill='%2364a83a'/%3E%3C/svg%3E"); background-size: contain; transform: none; }
+body.m2 #slot-mango { display: none; }
+.tpill.bird { background: rgba(250, 248, 240, 0.9); color: #3a2a1a; border-color: #fff; }
+.tpill.bird.hot { background: rgba(170, 30, 10, 0.88); color: #fff; }
+/* the finale's lure bar */
+#lure3d { position: absolute; left: 50%; bottom: calc(max(10px, var(--safe-b)) + 96px); transform: translateX(-50%); width: min(340px, 60vw); text-align: center;
+  background: rgba(30, 14, 6, 0.8); border: 2px solid rgba(255, 220, 160, 0.6); border-radius: 12px; padding: 4px 10px 8px; z-index: 3; pointer-events: none; }
+#lure3d .ar { font-size: 15px; font-weight: 800; } #lure3d .en { font-size: 11px; }
+#lure3d b { display: block; height: 10px; margin-top: 4px; border-radius: 5px; background: rgba(0, 0, 0, 0.5); overflow: hidden; }
+#lure3d i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #fff6d8, #ffd36a); transition: width .15s; }
+#lure3d.go { border-color: #9fffb0; box-shadow: 0 0 16px rgba(140, 255, 160, 0.7); }
+#lure3d.red { border-color: #ff3a2a; box-shadow: 0 0 16px rgba(255, 40, 20, 0.8); }
+#lure3d.hidden { display: none; }

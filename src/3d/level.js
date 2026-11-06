@@ -7,6 +7,7 @@ import { mergeGeometries } from '../../vendor/addons/BufferGeometryUtils.js';
 import { Builder, rng, atlasMaterial } from './builder.js';
 import { A } from './assets3d.js';
 import { donkeyCart, CART_FOOT } from './hazards.js';
+import { buildPigeonRoofs } from './level2.js';
 
 const FLOOR0 = 3.4, FLOOR = 3.2, TILE = 6.4, SHOP_W = 5.1;
 // Round 2 (pacing): the microbus stand moved 86 m down the street, so the run to the market (and the theft)
@@ -60,7 +61,7 @@ function facadeTint(fac, R) {
   }
   const k = 0.84 + R() * 0.26; return [k * (0.97 + R() * 0.08), k * (0.95 + R() * 0.07), k * (0.93 + R() * 0.08)];
 }
-const C = {
+export const C = {
   plaster: [0.86, 0.74, 0.58], plasterDark: [0.62, 0.5, 0.38], concrete: [0.66, 0.64, 0.6], wood: [0.5, 0.33, 0.2], woodDark: [0.33, 0.21, 0.13],
   iron: [0.16, 0.15, 0.15], tank: [0.12, 0.13, 0.16], tankBlue: [0.2, 0.32, 0.55], ac: [0.86, 0.86, 0.82], sand: [0.8, 0.68, 0.48],
   brick: [0.62, 0.32, 0.22], rope: [0.85, 0.8, 0.7], white: [0.95, 0.94, 0.9], blue: [0.18, 0.36, 0.66], glass: [0.12, 0.14, 0.18], tyre: [0.08, 0.08, 0.08],
@@ -81,7 +82,18 @@ export class Level {
     this.carts = []; this.stalls = []; this.fruit = []; this.melons = []; this.bulbs = [];
   }
 
-  build() {
+  build(mission = 1) {
+    // Mission 2: only its rooftop course, the houses round it, the skyline and the Nile (level2.js)
+    if (mission === 2) {
+      buildPigeonRoofs(this);
+      this.distant();
+      this.meshes = this.B.finish(this.root);
+      for (const m of this.meshes) if (m.geometry.boundingSphere.center.z < -1300) { m.material = SILHOUETTE; m.castShadow = m.receiveShadow = false; }
+      this.instanced();
+      this.wiresMesh();
+      this.nile = makeNile(); this.nile.position.z = -70; this.root.add(this.nile);   // the course runs 70 m further west
+      return this;
+    }
     this.ground();
     this.plaza();
     this.street();

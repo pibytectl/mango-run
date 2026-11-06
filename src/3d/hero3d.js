@@ -64,7 +64,12 @@ export class Hero {
     this.crate = crate; this.crateAnchor = anchor;
     this.crate.visible = false;
   }
-  setCarry(on) { this.carry = on; this.crate.visible = on; }
+  // what rides on his shoulder: the mango crate, or another prop parented to the crate (Mission 2's gas cylinder)
+  setCarry(on, item = null) {
+    this.carry = on; this.crate.visible = on;
+    for (const c of this.crate.children) if (c.isObject3D && c !== this.crateAnchor) c.visible = item ? c === item : !c.userData.carryItem;
+    if (item) item.userData.carryItem = true;
+  }
 
   place(x, y, z, yaw) {
     this.body.pos.set(x, y, z); this.body.vel.set(0, 0, 0); this.body.onGround = true;

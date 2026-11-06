@@ -17,6 +17,7 @@ import { Fight, Fighter } from './fight.js';
 import { Bot } from './bot.js';
 import { Hazards } from './hazards.js';
 import { RoofTraps } from './traps.js';
+import { Mission2, LIMIT2, SEG2 } from './mission2.js';
 import { sfx, playMusic, setMusicRate, loadMusic, audioInit, loadAmbient, setAmbient } from '../audio.js';
 import { num, clock } from '../strings.js';
 
@@ -34,6 +35,7 @@ const SEG = {
   fight: { ar: '٤ · الحارة', en: 'The Alley', oar: 'اضرب، صدّ، واتفادى', oen: 'Strike, block, dodge' },
   roofs: { ar: '٥ · السطوح', en: 'The Rooftops', oar: 'السطوح أقصر سكة للنيل', oen: 'The rooftops are the shortest way to the Nile' },
   jetty: { ar: '٦ · المرسى', en: 'The Jetty', oar: 'اجري ونُط على المعدية!', oen: 'Run and jump onto the ferry!' },
+  ...SEG2,
 };
 
 export async function start3D(env) {
@@ -47,6 +49,10 @@ class Game3D {
   constructor(env) {
     this.env = env; this.ui = env.ui; this.renderer = env.renderer; this.isTouch = env.isTouch;
     this.auto = !!env.auto; this.active = true; this.state = 'loading'; this.mode = 'play';
+    // which mission (1: The Mango Run, 2: The Runaway Pigeon); the engine is shared, the flow is per mission
+    this.mission = env.mission === 2 ? 2 : 1; this.limit = this.mission === 2 ? LIMIT2 : LIMIT;
+    // Mission 2 is short and dense: a smaller clean-section bonus, a smaller retry cost and floor
+    this.tune = this.mission === 2 ? { clean: 4, failCost: 8, minRestore: 35 } : { clean: CLEAN_BONUS, failCost: FAIL_COST, minRestore: 60 };
     this.stats = { fps: [], log: [], segTimes: {}, botNudges: 0, voices: 0 };
     this.waits = []; this.movers = [];
     this.log = (...a) => { const s = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '); this.stats.log.push(s); console.log('[saidi3d]', s); };
@@ -57,19 +63,19 @@ class Game3D {
   async load() {
     const ui = this.ui;
     ui.screen('screen-loading'); ui.setLoad(0.02);
-    document.body.classList.add('mode3d');
+    document.body.classList.add('mode3d'); document.body.classList.toggle('m2', this.mission === 2);
     const r = this.renderer;
     this.saved = { tm: r.toneMapping, exp: r.toneMappingExposure, sh: r.shadowMap.enabled };
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
     r.shadowMap.enabled = true; r.shadowMap.type = this.isTouch ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
-    await loadAssets3D((p) => ui.setLoad(0.05 + p * 0.85), r.capabilities.getMaxAnisotropy ? Math.min(4, r.capabilities.getMaxAnisotropy()) : 1);
+    await loadAssets3D((p) => ui.setLoad(0.05 + p * 0.85), r.capabilities.getMaxAnisotropy ? Math.min(4, r.capabilities.getMaxAnisotropy()) : 1, this.mission);
     this.quality = this.isTouch ? { shadow: 1024, shadowRange: 26 } : { shadow: 2048, shadowRange: 32 };
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 1400);
     this.phys = new PhysWorld();
     // the shop signs and kiosk banners are drawn into canvases in the game font: make sure it is ready
     try { await Promise.race([document.fonts.load('900 40px CairoGame'), new Promise((r) => setTimeout(r, 3000))]); } catch (e) {}
-    this.level = new Level(this.scene, this.phys).build();
+    this.level = new Level(this.scene, this.phys).build(this.mission);
     ui.setLoad(0.93);
     this.sky = new Sky(this.scene, r, this.quality);
     this.fx = new Particles(this.scene);
@@ -81,17 +87,23 @@ class Game3D {
     this.haz = new Hazards(this); this.sfxSplash = () => sfx3.splash();
     this.jugTaken = false; this.traps = new RoofTraps(this);
     this.pigeons = new Pigeons(this.scene);
-    this.goat = new Goat(this.scene); this.goat.pos.set(-7, 0, -238); this.goat.yaw = 0;
-    this.chase = new Chase(this);
     this.fight = new Fight(this);
-    this.makeCast();
-    this.makeProps();
+    if (this.mission === 1) {
+      this.goat = new Goat(this.scene); this.goat.pos.set(-7, 0, -238); this.goat.yaw = 0;
+      this.chase = new Chase(this);
+      this.makeCast();
+      this.makeProps();
+    } else {
+      this.makeLockRing(); this.elapsed = 0; this.npc = {};
+      this.m2 = new Mission2(this); this.allNpcs = this.m2.npcs;
+    }
     initInput3D(this.isTouch, r.domElement);
     this.inp = {};
     addEventListener('resize', this._onResize = () => this.resize());
     this.resize();
     // compile shaders up front so the first frames do not hitch
-    this.hero.place(3.6, 0, 20.5 + PLAZA_Z, Math.PI);
+    if (this.m2) this.hero.place(this.level.spawns.m2.start.x, this.level.spawns.m2.start.y, this.level.spawns.m2.start.z, Math.PI);
+    else this.hero.place(3.6, 0, 20.5 + PLAZA_Z, Math.PI);
     this.cam.snapBehind(this.hero.pos, Math.PI);
     this.cam.update(0.016, { focus: this.hero.pos, look: { x: 0, y: 0 } });
     // compile every shader now, hidden things included (townspeople, chase tok-toks...): compile() skips
@@ -100,7 +112,7 @@ class Game3D {
     r.compile(this.scene, this.camera);
     for (const o of hidden) o.visible = false;
     ui.setLoad(1);
-    prefetchVoices();
+    prefetchVoices(this.mission);
     // Mzee's own recordings: street traffic (low-passed into a distant hum) and the city heard from a rooftop
     loadAmbient('street', 'assets/3d/amb_traffic.mp3'); loadAmbient('roof', 'assets/3d/amb_roof.mp3');
     this.log('loaded', { boxes: this.phys.boxes.length, calls: 0 });
@@ -157,9 +169,7 @@ class Game3D {
     this.streetToks = [];
     this.parkedTok = makeTok(this.scene, 0x9fd0ff); const pt = this.level.spawns.parkedTok;
     this.parkedTok.root.position.set(pt.x, 0, pt.z); this.parkedTok.root.rotation.y = Math.PI / 2 + 0.05;
-    // lock ring
-    this.lockRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.68, 32), new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.85, depthWrite: false }));
-    this.lockRing.rotation.x = -Math.PI / 2; this.lockRing.visible = false; this.scene.add(this.lockRing);
+    this.makeLockRing();
     // rooftop start cue: a chalk arrow on the wall over the crates and a pulsing ring on top of them
     {
       const c = document.createElement('canvas'); c.width = 128; c.height = 256; const x = c.getContext('2d');
@@ -174,6 +184,10 @@ class Game3D {
       this.roofCue = new THREE.Group(); this.roofCue.add(arrow, ring); this.roofCue.visible = false; this.scene.add(this.roofCue);
       this.roofCueRing = ring;
     }
+  }
+  makeLockRing() {
+    this.lockRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.68, 32), new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.85, depthWrite: false }));
+    this.lockRing.rotation.x = -Math.PI / 2; this.lockRing.visible = false; this.scene.add(this.lockRing);
   }
   resize() {
     const w = innerWidth, h = innerHeight;
@@ -202,15 +216,17 @@ class Game3D {
     if (this.auto) { this.bot = new Bot(this); I3.bot = this.bot.inp; }
     const seg = Q.get('seg3d');
     if (seg) { this.cp = this.defaultCp(seg); this.restoreCp(); return; }
-    this.run(() => this.cutIntro());
+    if (this.m2) this.run(() => this.m2.cutIntro());
+    else this.run(() => this.cutIntro());
   }
   resetRun() {
-    this.timeLeft = LIMIT; this.mangoes = 12; this.stolen = 0; this.hp = 6; this.lost = 0; this.hpLost = 0;
+    this.timeLeft = this.limit; this.mangoes = this.m2 ? 0 : 12; this.stolen = 0; this.hp = 6; this.lost = 0; this.hpLost = 0;
     this.fightTries = 0; this.fightWon = false; this.elapsed = 0; this.deaths = 0; this.fails = 0; this.cleanBonus = 0;
     this.cp = null; this.seg = 'intro'; this.lastCpSeg = null; this.sec = null; this.jugTaken = false;
     this.syncHud(true);
   }
   defaultCp(seg) {
+    if (this.m2) return this.m2.defaultCp(seg);
     const L = this.level.spawns;
     const base = { street: [L.street, Math.PI, 12, 0, LIMIT - 5], market: [L.cpMarket, Math.PI, 12, 0, LIMIT - 20], chase: [L.tokPlayer, Math.PI, 6, 6, LIMIT - 42],
       fight: [L.fight, Math.PI, 8, 4, LIMIT - 90], roofs: [V(-1.5, 0, -912), Math.PI, 12, 0, LIMIT - 108], jetty: [L.cpJetty, Math.PI, 12, 0, LIMIT - 140], roofs2: [L.cpRoof2, Math.PI, 12, 0, LIMIT - 125] }[seg];
@@ -226,15 +242,15 @@ class Game3D {
   restoreCp(penalty = false) {
     const c = this.cp;
     // round 4: a retry costs sun (was free: the clock went back to the checkpoint's time)
-    if (penalty) c.time = Math.max(c.time - FAIL_COST, 60);   // cumulative: every retry of a stretch costs 10 s more
+    if (penalty) c.time = Math.max(c.time - this.tune.failCost, this.tune.minRestore);   // cumulative: every retry of a stretch costs more
     this.mangoes = c.mangoes; this.stolen = c.stolen; this.timeLeft = c.time; this.hp = 6; this.haz.clear();
     this.sec = null; this.traps.reset();
     this.voice.stop(); this.voice.hide(); this.mangoesFx.clear(); this.clearWorldUi(); this.ui.hideToast(); this.clearSticky();
     this.hero.cine = false; this.hero.ride = false; this.hero.body.h = 1.75; this.hero.lockTarget = null; this.hero.targets = [];
-    this.chase.stop(); this.chase.hide(); this.fight.stop(); this.engine.stop();
-    this.endCrowd(); this.npc.thief.body.h = 1.7;
+    this.fight.stop(); this.engine.stop();
+    if (this.chase) { this.chase.stop(); this.chase.hide(); this.endCrowd(); this.npc.thief.body.h = 1.7; }
     for (const n of this.allNpcs) n.show(false);
-    for (const t of this.streetToks) this.scene.remove(t.tok.root);
+    for (const t of this.streetToks || []) this.scene.remove(t.tok.root);
     this.streetToks = []; this.timeScale = 1; this.hitStop = 0; this.movers = [];
     this.cam.shot = null;
     this.enterSeg(c.seg, true);
@@ -253,7 +269,7 @@ class Game3D {
   advance() { if (this.mode === 'cut' && this.voice.busy()) this.voice.stop(); }
   play(seg) {
     this.mode = 'play'; this.seg = seg; this.cam.shot = null; if (this.roofCue) this.roofCue.visible = false;
-    this.traps.show(seg === 'roofs');
+    this.traps.show(seg === 'roofs' || !!this.m2);
     this.showControls(true); clearInput3D(); this.setButtons(seg);
     this.segStart = this.elapsed;
     this.closeSection(); this.sec = { seg, lost: this.hpLost || 0, m: this.mangoes, dirty: false };
@@ -262,16 +278,18 @@ class Game3D {
     const s = SEG[seg]; this.ui.banner({ ar: s.ar, en: s.en });
     setTimeout(() => { if (this.seg === seg && this.mode === 'play' && !this.stickyOn()) this.toast({ ar: s.oar, en: s.oen }, 3.2, 'obj'); }, 2300);
     playMusic('run', 0.5); setMusicRate(seg === 'chase' || seg === 'fight' ? 1.05 : 1);
-    if (seg === 'roofs' || seg === 'jetty') setAmbient(seg === 'roofs' ? 0.32 : 0.2, 'roof');
+    if (this.m2) setAmbient(0.3, 'roof');
+    else if (seg === 'roofs' || seg === 'jetty') setAmbient(seg === 'roofs' ? 0.32 : 0.2, 'roof');
     else setAmbient(seg === 'chase' ? 0.34 : seg === 'street' || seg === 'market' ? 0.24 : 0, 'street');
   }
   // a section played clean (no heart, no mango lost, no retry) gives sun back when the next one starts
   closeSection() {
     const S = this.sec; this.sec = null;
     if (!S || S.dirty || (this.hpLost || 0) > S.lost || this.mangoes < S.m) return;
-    this.timeLeft = Math.min(LIMIT, this.timeLeft + CLEAN_BONUS); this.cleanBonus += CLEAN_BONUS;
-    this.log('clean section', S.seg, { bonus: CLEAN_BONUS });
-    setTimeout(() => { if (this.mode === 'play' && this.state === 'play') this.toast({ ar: 'مرحلة نضيفة! +' + num(CLEAN_BONUS) + ' ثواني شمس', en: 'Clean section! +' + CLEAN_BONUS + ' s of sun' }, 2.2); }, 900);
+    const B = this.tune.clean;
+    this.timeLeft = Math.min(this.limit, this.timeLeft + B); this.cleanBonus += B;
+    this.log('clean section', S.seg, { bonus: B });
+    setTimeout(() => { if (this.mode === 'play' && this.state === 'play') this.toast({ ar: 'مرحلة نضيفة! +' + num(B) + ' ثواني شمس', en: 'Clean section! +' + B + ' s of sun' }, 2.2); }, 900);
   }
   showControls(on) { this.ui.show('hud', on); $('c3d').classList.toggle('hidden', !on); I3.enabled = on; updateLockHint(); }
   setButtons(seg) {
@@ -309,6 +327,7 @@ class Game3D {
     this.waits = this.waits || [];
     if (this.waits.length) { for (const w of this.waits) w.t -= dt; const done = this.waits.filter((w) => w.t <= 0); this.waits = this.waits.filter((w) => w.t > 0); for (const w of done) w.res(); }
     const I = readInput3D(this.inp);
+    if (this.m2 && this.mode === 'play') this.m2.filterInput(I);
     if (this.bot && this.mode === 'play') this.bot.step(dt);
     if (this.mode === 'play') {
       this.elapsed += dt;
@@ -335,16 +354,16 @@ class Game3D {
     else if (this.cutStep) this.cutStep(dt);
     this.fight.step(dt);
     for (const n of this.allNpcs) if (n.active && !n.fighting) n.update(dt);
-    this.goat.update(dt);
+    if (this.goat) this.goat.update(dt);
     this.pigeons.update(dt, hero.pos.clone().setY(hero.pos.y + 1), (p) => { sfx3.flap(); if (p.white && !this.voice.played.has('u2')) setTimeout(() => this.voice.say('u2', 2), 500); });
     this.mangoesFx.update(dt, (x, z, y) => { const g = this.phys.groundAt(x, z, 0.1, y); return g ? g.y : -0.4; },
       this.seg === 'chase' ? { x: this.chase.player.x, y: 0, z: this.chase.player.z } : hero.pos, this.seg === 'chase' ? 2.4 : 1.5, () => this.gainMango());
-    this.updateFerry(dt);
-    this.updateBall(dt);
-    if (this.seg === 'roofs' && this.mode === 'play') this.traps.step(dt);
+    if (this.ferry) this.updateFerry(dt);
+    if (this.ball) this.updateBall(dt);
+    if ((this.seg === 'roofs' || this.m2) && this.mode === 'play') this.traps.step(dt);
     this.fx.update(dt);
     this.voice.update(dt);
-    this.sky.setSun(Math.max(0, this.timeLeft / LIMIT));
+    this.sky.setSun(Math.max(0, this.timeLeft / this.limit));
     if (this.mode === 'play') {
       if (this.hp <= 0) this.fail('hearts');
       else if (this.timeLeft <= 0) this.fail('time');
@@ -367,7 +386,7 @@ class Game3D {
       // every on-foot stretch of the mission runs down -Z (west, to the Nile): on touch the camera lines up with
       // the route, not with the hero's heading, so an off-angle stick no longer curls "forward" into a wall
       route: I3.touch || this.bot ? Math.PI : undefined,
-      high: this.seg === 'roofs',
+      high: this.seg === 'roofs' || !!this.m2,
     });
   }
   renderFrame(dt) {
@@ -416,7 +435,7 @@ class Game3D {
     }
     if (force || this._m !== this.mangoes) { const up = this._m !== undefined && this.mangoes > this._m; this._m = this.mangoes; ui.setMangoes(this.mangoes, !force); if (!force) $('slot-crate').classList.toggle('gain', up); }
     ui.setStamina(this.seg === 'chase' ? this.chase.player.boost : this.hero.stamina);
-    ui.setTime(this.timeLeft, LIMIT);
+    ui.setTime(this.timeLeft, this.limit);
   }
   toast(t, dur = 2.6, key) { this.ui.toast(t, dur, key); }
   // An obstacle hint that stays up while the obstacle is ahead: refreshed every step it is wanted, cleared
@@ -535,7 +554,8 @@ class Game3D {
       if (d < atk.range + 0.4 && this.thiefRun.stun <= -0.9) { hits++; this.thiefHit(); }
     }
     // the football
-    if (this.ball.live && this.ball.p.distanceTo(h.pos.clone().setY(h.pos.y + 0.4)) < 2.6) { hits++; this.kickBall(); }
+    if (this.ball && this.ball.live && this.ball.p.distanceTo(h.pos.clone().setY(h.pos.y + 0.4)) < 2.6) { hits++; this.kickBall(); }
+    if (this.m2) hits += this.m2.heroImpact(atk, h);
     if (hits) {
       const fin = !!atk.finisher;
       this.hitStop = fin ? 0.11 : 0.065;
@@ -655,6 +675,7 @@ class Game3D {
   // ================================================================== 2. street
   enterSeg(seg, fromCp) {
     const c = this.cp;
+    if (this.m2) { this.m2.start(c.sub || 'start', true); return; }
     if (seg === 'street') this.startStreet(true);
     else if (seg === 'market') { this.hero.setCarry(true); this.hero.place(c.pos.x, c.pos.y, c.pos.z, c.yaw); this.cam.snapBehind(this.hero.pos, c.yaw); this.run(() => this.cutSnatch()); }
     else if (seg === 'chase') this.run(() => this.cutTokStart(true));
@@ -710,6 +731,7 @@ class Game3D {
     }
   }
   segStep(dt, I) {
+    if (this.m2) { this.m2.step(dt, I); this.stickyTick(); return; }
     const h = this.hero, z = h.pos.z;
     if (this.seg === 'street') {
       const S = this.street, M = this.level.spawns.marks;
@@ -958,19 +980,19 @@ class Game3D {
   }
   // a tag over the thief: how far ahead he is, red and pulsing when he is about to get away
   // (the simulation asks for it every step; it is drawn once per rendered frame in drawPill)
-  thiefPill(pos, d, showAt, maxAt, danger) { this._pillWant = { pos: { x: pos.x, y: pos.y || 0, z: pos.z }, d, showAt, maxAt, danger, at: this.elapsed }; }
+  thiefPill(pos, d, showAt, maxAt, danger, label) { this._pillWant = { pos: { x: pos.x, y: pos.y || 0, z: pos.z }, d, showAt, maxAt, danger, label, at: this.elapsed }; }
   drawPill() {
     let el = this._pill;
     if (!el) { el = this._pill = document.createElement('div'); el.className = 'tpill hidden'; $('world-ui').appendChild(el); }
     const P = this._pillWant;
     if (!P || this.elapsed - P.at > 0.1 || P.d < P.showAt || this.mode !== 'play') { el.classList.add('hidden'); return; }
-    const { pos, d, maxAt, danger } = P;
+    const { pos, d, maxAt, danger, label } = P;
     const v = new THREE.Vector3(pos.x, (pos.y || 0) + 2.3, pos.z).project(this.camera);
     const W = innerWidth, H = innerHeight, behind = v.z > 1;
     const x = THREE.MathUtils.clamp(((behind ? -v.x : v.x) + 1) / 2 * W, 40, W - 40), y = THREE.MathUtils.clamp((1 - v.y) / 2 * H, 70, H - 90);
     el.style.left = x + 'px'; el.style.top = (behind ? 70 : y) + 'px';
-    el.className = 'tpill' + (d > maxAt * 0.85 ? ' far' : '') + (danger > 0 ? ' hot' : '');
-    const txt = num(Math.round(d)) + ' م' + (danger > 0 ? ' · هيهرب!' : '');
+    el.className = 'tpill' + (label ? ' bird' : '') + (d > maxAt * 0.85 ? ' far' : '') + (danger > 0 ? ' hot' : '');
+    const txt = (label ? label + ' · ' : '') + num(Math.round(d)) + ' م' + (danger > 0 ? (label ? ' · هتطير!' : ' · هيهرب!') : '');
     if (el._t !== txt) { el._t = txt; el.textContent = txt; }
   }
 
@@ -1335,31 +1357,45 @@ class Game3D {
     // round 4: near-perfect play: all 12, a minute and a quarter of sun (clean sections give sun back), and the
     // whole run without a single retry, losing at most one heart
     const stars = [r.mangoes >= 12, r.timeLeft >= STAR_SUN, r.fails === 0 && r.hpLost <= 2];
-    this.state = 'end';
-    this.showControls(false);
-    this.ui.show('hud', false);
-    this.ui.screen('screen-end');
-    const st = [...document.querySelectorAll('#stars span')];
-    const n = stars.filter(Boolean).length;
-    st.forEach((s, i) => s.classList.toggle('on', i < n));
-    $('end-mangoes').textContent = num(r.mangoes) + ' من ' + num(12);
-    $('end-time').textContent = clock(r.elapsed);
-    $('end-fights').textContent = r.fails === 0 ? 'ولا مرة' : num(r.fails) + (r.fails > 2 ? ' مرات' : r.fails === 2 ? ' مرتين' : ' مرة');
-    const rows = $('end-checks');
-    rows.innerHTML = [
+    const rows = [
       [stars[0], 'وصّلت الاتناشر مانجاية كلهم', 'Delivered all twelve mangoes'],
       [stars[1], 'وصلت والشمس لسه فاضل لها دقيقة وربع', 'Made it with a minute and a quarter of sun to spare'],
       [stars[2], 'المشوار كله من غير ولا إعادة، ومن غير ما تخسر أكتر من قلب', 'The whole run without a retry, losing at most one heart'],
-    ].map(([ok, a, e]) => `<div class="chk${ok ? ' ok' : ''}"><b>${ok ? '★' : '☆'}</b><span class="ar">${a}</span><em class="en" dir="ltr">${e}</em></div>`).join('');
-    const ranks = [
+    ];
+    this.showEnd(1, stars, rows, { countText: num(r.mangoes) + ' من ' + num(12), countLabel: ['مانجا', 'Mangoes'], elapsed: r.elapsed, fails: r.fails });
+  }
+  // the end screen of either mission: stars, what each one was for, the stats, a rank; finishing a mission
+  // unlocks the next (localStorage, with a safe fallback when storage is blocked)
+  showEnd(mission, stars, rows, o) {
+    this.state = 'end';
+    this.showControls(false); this.ui.show('hud', false); this.clearWorldUi();
+    this.ui.screen('screen-end');
+    const n = stars.filter(Boolean).length;
+    [...document.querySelectorAll('#stars span')].forEach((s, i) => s.classList.toggle('on', i < n));
+    $('end-title').textContent = mission === 2 ? 'المهمة التانية خلصت!' : 'المهمة الأولى خلصت!';
+    $('end-title-en').textContent = mission === 2 ? 'Mission 2 complete!' : 'Mission 1 complete!';
+    $('end-mangoes').textContent = o.countText; $('end-count-ar').textContent = o.countLabel[0]; $('end-count-en').textContent = o.countLabel[1];
+    $('end-time').textContent = clock(o.elapsed);
+    $('end-fights').textContent = o.fails === 0 ? 'ولا مرة' : num(o.fails) + (o.fails > 2 ? ' مرات' : o.fails === 2 ? ' مرتين' : ' مرة');
+    $('end-checks').innerHTML = rows.map(([ok, a, e]) => `<div class="chk${ok ? ' ok' : ''}"><b>${ok ? '★' : '☆'}</b><span class="ar">${a}</span><em class="en" dir="ltr">${e}</em></div>`).join('');
+    const ranks = mission === 2 ? [
+      { ar: 'سُكّرة رجعت بيتها، وده الأهم.', en: 'Sukkara is home, that\'s what counts.' },
+      { ar: 'شغل محترم يا رضوان!', en: 'Solid work, Radwan!' },
+      { ar: 'زغلول نفسه انبسط منك!', en: 'Even Zaghloul is impressed!' },
+      { ar: 'سلطان السطوح! ولا غلطة.', en: 'King of the rooftops! Flawless.' },
+    ] : [
       { ar: 'وصلت، وده الأهم. المرة الجاية النجوم كلها!', en: 'You made it, that\'s what counts. Next time, every star!' },
       { ar: 'شغل محترم يا رضوان!', en: 'Solid work, Radwan!' },
       { ar: 'جدع والله! قريب من الكمال.', en: 'Well done! Nearly perfect.' },
       { ar: 'أسطورة إمبابة! ولا غلطة.', en: 'Legend of Imbaba! Flawless.' },
-    ][n];
-    $('end-rank').textContent = ranks.ar; $('end-rank-en').textContent = ranks.en;
+    ];
+    $('end-rank').textContent = ranks[n].ar; $('end-rank-en').textContent = ranks[n].en;
     for (let i = 0; i < n; i++) setTimeout(() => sfx.star(i), 350 * i + 200);
-    this.log('end-screen', { stars: n, ...r });
+    let unlocked = 1;
+    try { unlocked = Math.max(+localStorage.getItem('saidi.unlocked') || 1, mission + 1); localStorage.setItem('saidi.unlocked', String(unlocked)); } catch (e) { unlocked = mission + 1; }
+    document.body.dataset.endm = String(mission);
+    $('btn-next').classList.toggle('hidden', !(mission === 1 && unlocked >= 2));
+    this.log('end-screen', { mission, stars: n, ...(this.result || {}) });
   }
 
   // ================================================================== fail / pause / exit
@@ -1373,6 +1409,7 @@ class Game3D {
       time: [{ ar: 'الشمس غابت... والمعدية مشيت!', en: 'The sun has set... and the ferry left!' }, { ar: 'ولا يهمك، نرجع لآخر نقطة واجري أسرع.', en: 'Never mind. Back to the last checkpoint, and run faster.' }],
       hearts: [{ ar: 'رضوان محتاج ياخد نفسه', en: 'Radwan needs to catch his breath' }, { ar: 'نرجع لآخر نقطة، والمانجا اللي كانت معاك هناك ترجع لك.', en: 'Back to the last checkpoint, with the mangoes you had there.' }],
       escaped: [{ ar: 'الحرامي هرب!', en: 'The thief got away!' }, { ar: 'خليك لازق فيه واستعمل البوست.', en: 'Stay on his tail and use the boost.' }],
+      pigeon: [{ ar: 'سُكّرة راحت على برج زغلول!', en: 'Sukkara flew to Zaghloul\'s tower!' }, { ar: 'ما تسيبهاش تستنى كتير... ولما زغلول يصفّر، ناديها بزرار النبّوت.', en: 'Don\'t keep her waiting... and when Zaghloul whistles, call her with the staff button.' }],
       lost: [{ ar: 'الحرامي ضاع في الزحمة!', en: 'The thief lost you in the crowd!' }, { ar: 'اجري على آخرك، ولف من جنب الناس أو اتزحلق.', en: 'Sprint, and go round the shoppers or slide.' }],
     }[kind];
     $('fail-title').textContent = T[0].ar; $('fail-title-en').textContent = T[0].en;
@@ -1384,11 +1421,13 @@ class Game3D {
   pause() { if (this.state !== 'play') return; this.state = 'paused'; this.ui.screen('screen-pause'); clearInput3D(); I3.enabled = false; this.voice.stop(); this.engine.mute(true); }
   resume() { if (this.state !== 'paused') return; audioInit('resume'); this.engine.mute(false); this.ui.screen(null); this.state = 'play'; I3.enabled = this.mode === 'play'; clearInput3D(); this.last = performance.now(); }
   restartCp() { this.ui.screen(null); this.state = 'play'; this.fails++; this.restoreCp(true); }
-  again() { this.ui.screen(null); this.state = 'play'; this.resetRun(); this.cp = this.defaultCp('street'); this.restoreCp(); }
+  again() { this.ui.screen(null); this.state = 'play'; this.resetRun(); if (this.m2) { this.m2.t1 = this.m2.t2 = this.m2.t3 = null; } this.cp = this.defaultCp(this.m2 ? 'start' : 'street'); this.restoreCp(); }
+  onDog(e) { if (this.m2) this.m2.onDog(e); }
   exit() {
     this.active = false; cancelAnimationFrame(this.raf);
     this.voice.stop(); this.voice.hide(); this.engine.stop(); setAmbient(0); clearInput3D(); I3.enabled = false; I3.bot = null;
-    $('c3d').classList.add('hidden'); $('bars3d').classList.add('hidden'); this.clearWorldUi();
+    $('c3d').classList.add('hidden'); $('bars3d').classList.add('hidden'); this.clearWorldUi(); if ($('lure3d')) $('lure3d').classList.add('hidden');
+    document.body.classList.remove('m2');
     removeEventListener('resize', this._onResize);
     document.body.classList.remove('mode3d');
     const r = this.renderer; r.toneMapping = this.saved.tm; r.toneMappingExposure = this.saved.exp; r.shadowMap.enabled = this.saved.sh;

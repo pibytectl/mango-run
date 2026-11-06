@@ -16,6 +16,11 @@ export const CAST = {
   kid: { ar: 'العيال', en: 'The kids', voice: '6aXW46RTUz6Y2lkBGQ1a' },
   toktok: { ar: 'سوّاق التوكتوك', en: 'Tok-tok driver', voice: 'ckGEQg6YnSVooU5uDRsF' },
   captain: { ar: 'الريّس عبده', en: 'Captain Abdo', voice: 'JTMaHm6sHVI3NZgPaWDz' },
+  // Mission 2
+  hajja: { ar: 'الحاجة نفيسة', en: 'Hajja Nefisa', voice: 'meAbY2VpJkt1q46qk56T' },
+  umm: { ar: 'أم نادية', en: 'Umm Nadia', voice: 'Vu9gRjkR23ZG8EWrSmnj' },
+  sika: { ar: 'سيكا', en: 'Sika', voice: 'ckGEQg6YnSVooU5uDRsF' },
+  zaghloul: { ar: 'المعلم زغلول', en: 'Zaghloul', voice: 'IES4nrmZdUBHByLBde0P' },
 };
 
 export const LINES = {
@@ -87,5 +92,33 @@ export const LINES = {
   j5: { who: 'radwan', ar: 'الحمد لله، وصلنا. والعريس هيسامحنا على اللي ناقص.', en: 'Thank God, we made it. The groom will forgive us the missing ones.' },
   j6: { who: 'captain', ar: 'بس خلّي بالك يا حاج... الحمامة البيضا دي واقفة على المعدية من الصبح.', en: 'But watch out, Hajj... that white pigeon has been sitting on the ferry since this morning.', tts: 'بَسّ خَلّي بالَك يا حاجّ... الحَمامة البيْضا دي واقْفة على الْمِعَدِّيَّة مِن الصُّبْح.' },
   x1: { who: 'radwan', ar: 'هرب مني... لا، مش هسيبه!', en: 'He got away... no, I won\'t let him!' },
+  // ==== Mission 2, "The Runaway Pigeon" (m: 2 = fetched only for that mission). Sukkara is the white pigeon
+  // that followed Radwan onto the ferry at the end of Mission 1; Hajja Nefisa keeps her in the tower on her roof.
+  p1: { m: 2, who: 'hajja', ar: 'رجعت يا رضوان؟ طمّني، جناح سُكّرة خفّ؟', en: 'You\'re back, Radwan? Tell me, has Sukkara\'s wing healed?', tts: 'رِجِعْت يا رَضْوان؟ طَمِّنّي، جَناح سُكَّرَة خَفّ؟' },
+  p2: { m: 2, who: 'radwan', ar: 'زي الفل يا حاجة. الحمامة اللي نطّت ورايا على المعدية بقت أغلى حاجة عندي.', en: 'Good as new, Hajja. The pigeon that followed me onto the ferry is now the dearest thing I own.', tts: 'زَيّ الفُلّ يا حاجَّة. الحَمامَة اللي نَطِّت وَرايا عَلى الْمِعَدِّيَّة بَقِت أَغْلى حاجَة عَنْدي.' },
+  p3: { m: 2, who: 'zaghloul', ar: 'يا سلام! حمامة بيضا زي القشطة... تعالي يا جميلة!', en: 'Well now! A white pigeon like cream... come here, beautiful!', tts: '[calling out] يا سَلام! حَمامَة بيضا زَيّ القِشْطَة... تَعالي يا جَميلَة!' },
+  p4: { m: 2, who: 'kid', ar: 'عمو! الحمامة طارت!', en: 'Uncle! The pigeon flew off!', tts: '[shouting] عَمُّو! الحَمامَة طارِت!' },
+  p5: { m: 2, who: 'hajja', ar: 'برجها على سطح بيتي آخر الشارع... الحقها قبل ما زغلول ياخدها!', en: 'Her tower is on my roof at the end of the street... catch her before Zaghloul takes her!', tts: '[urgent] بُرْجَها عَلى سَطْح بيتي آخِر الشّارِع... اِلْحَقْها قَبْل ما زَغْلول ياخُدْها!' },
+  p6: { m: 2, who: 'radwan', ar: 'سُكّرة! استني يا بت! ...ولا يهمّك يا حاجة، أنا جايبها.', en: 'Sukkara! Wait, girl! ...Don\'t worry, Hajja, I\'ll bring her back.', tts: '[shouting] سُكَّرَة! اِسْتَنّي يا بِتّ! ...وَلا يِهِمِّك يا حاجَّة، أَنا جايِبْها.' },
+  q1: { m: 2, who: 'radwan', ar: 'استني يا سُكّرة!', en: 'Wait, Sukkara!', tts: '[shouting] اِسْتَنّي يا سُكَّرَة!' },
+  q2: { m: 2, who: 'radwan', ar: 'ارجعي هنا يا بت!', en: 'Come back here, girl!', tts: '[shouting] اِرْجَعي هِنا يا بِتّ!' },
+  q3: { m: 2, who: 'zaghloul', ar: 'تعالي يا حلوة، تعالي على برجي!', en: 'Come, pretty one, come to my tower!', tts: 'تَعالي يا حِلْوَة، تَعالي عَلى بُرْجي!' },
+  q4: { m: 2, who: 'radwan', ar: 'يا سُكّرة! هنا! هنا!', en: 'Sukkara! Here! Over here!', tts: '[shouting] يا سُكَّرَة! هِنا! هِنا!' },
+  n1: { m: 2, who: 'umm', ar: 'الحق يا جدع! سبت الغسيل هيقع!', en: 'Quick, lad! The laundry basket is falling!', tts: '[shouting] اِلْحَق يا جَدَع! سَبَت الغَسيل هَيُقَع!' },
+  n2: { m: 2, who: 'umm', ar: 'تسلم إيدك يا ابني! ادخل من باب السطح، أقصر لك.', en: 'Bless your hands, son! Go through the roof door, it\'s shorter.', tts: 'تِسْلَم إيدَك يا اِبْني! اُدْخُل مِن باب السَّطْح، أَقْصَر لَك.' },
+  n3: { m: 2, who: 'umm', ar: 'يا خبر! الغسيل كله اتبهدل... معلش يا ابني، اطلع من فوق.', en: 'Oh no! The washing\'s all ruined... never mind, son, go over the top.', tts: 'يا خَبَر! الغَسيل كُلُّه اِتْبَهْدِل... مَعْلِش يا اِبْني، اِطْلَع مِن فوق.' },
+  k1: { m: 2, who: 'sika', ar: 'اثبتي يا حلوة... الشبكة جاية أهي!', en: 'Hold still, pretty... here comes the net!', tts: '[sneaky] اُثْبُتي يا حِلْوَة... الشَّبَكَة جايَّة أَهي!' },
+  k2: { m: 2, who: 'radwan', ar: 'سيب الحمامة يا ولد!', en: 'Leave the pigeon alone, boy!', tts: '[shouting] سيب الحَمامَة يا وَلَد!' },
+  k3: { m: 2, who: 'sika', ar: 'خلاص خلاص! أنا ماشي... بس أبويا مش هيسكت!', en: 'Okay, okay! I\'m going... but my dad won\'t let this go!', tts: '[panicked] خَلاص خَلاص! أَنا ماشي... بَسّ أَبويا مِش هَيِسْكُت!' },
+  k4: { m: 2, who: 'sika', ar: 'طارت! جري بقى يا عم!', en: 'She\'s off! Better run, mister!', tts: '[laughs] طارِت! جَرْي بَقى يا عَمّ!' },
+  d1: { m: 2, who: 'radwan', ar: 'يا ساتر! الكلب ده بتاع مين؟', en: 'Good grief! Whose dog is this?', tts: '[shouting] يا ساتِر! الكَلْب دَه بِتاع مين؟' },
+  g1: { m: 2, who: 'kid', ar: 'عمو! الأنبوبة تقيلة أوي... وستّي مستنياها فوق عشان العشا!', en: 'Uncle! The gas cylinder is so heavy... and Grandma needs it upstairs for dinner!', tts: 'عَمُّو! الأَنْبوبَة تِقيلَة أَوي... وسِتّي مِسْتَنِّياها فوق عَشان العَشا!' },
+  g2: { m: 2, who: 'kid', ar: 'شكرًا يا عمو! خد الدرة دي لسُكّرة، والسلم ده يطلّعك البرج على طول!', en: 'Thanks, uncle! Take this corn for Sukkara, and this ladder gets you up the tower!', tts: '[happy] شُكْرًا يا عَمُّو! خُد الدُّرَة دي لِسُكَّرَة، والسِّلِّم دَه يِطَلَّعَك البُرْج عَلى طول!' },
+  f21: { m: 2, who: 'radwan', ar: 'تعالي يا سُكّرة... تعالي، ده بيتك.', en: 'Come, Sukkara... come on, this is your home.', tts: 'تَعالي يا سُكَّرَة... تَعالي، دَه بيتِك.' },
+  z1: { m: 2, who: 'zaghloul', ar: 'تعالي هنا يا جميلة! عندي درة أحلى!', en: 'Over here, beautiful! I\'ve got sweeter corn!', tts: '[calling out] تَعالي هِنا يا جَميلَة! عَنْدي دُرَة أَحْلى!' },
+  e1: { m: 2, who: 'hajja', ar: 'رجعت لبرجها! تسلم يا رضوان، يا ابن الأصول.', en: 'She\'s back in her tower! Bless you, Radwan, you good soul.', tts: '[happy] رِجْعِت لِبُرْجَها! تِسْلَم يا رَضْوان، يا اِبْن الأُصول.' },
+  e2: { m: 2, who: 'radwan', ar: 'والمرة الجاية يا معلم زغلول، صفّر لحمامك انت.', en: 'And next time, Zaghloul, whistle for your own pigeons.', tts: 'والمَرَّة الجايَّة يا مِعَلِّم زَغْلول، صَفَّر لِحَمامَك اِنْتَ.' },
+  e3: { m: 2, who: 'zaghloul', ar: 'ماشي يا عم... بس الحمامة دي ذوقها عالي!', en: 'Fine, fine... but that pigeon has fine taste!', tts: '[laughs] ماشي يا عَمّ... بَسّ الحَمامَة دي ذوقْها عالي!' },
+  x3: { m: 2, who: 'radwan', ar: 'راحت على برج زغلول... لأ، مش هسيبها!', en: 'She went to Zaghloul\'s tower... no, I won\'t give her up!', tts: 'راحِت عَلى بُرْج زَغْلول... لأ، مِش هَسيبْها!' },
   x2: { who: 'radwan', ar: 'راح فين ده؟ ضاع مني في الزحمة!', en: 'Where did he go? I lost him in the crowd!', tts: 'راح فين دَه؟ ضاع مِنّي في الزَّحْمة!' },
 };

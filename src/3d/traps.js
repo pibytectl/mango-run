@@ -26,7 +26,8 @@ export class RoofTraps {
     // dark crack lines drawn over each cornice piece (merged into the same instance via a second thin box would
     // cost a call; the alternating tones and the rusty tin read as "different, weak" well enough)
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._v = new THREE.Vector3(); this._s = new THREE.Vector3();
-    // ---- the plank
+    // ---- the plank and the jug (Mission 1 only; Mission 2 uses the crumbling pieces)
+    if (!L.plank) { this.plank = null; this.jug = null; this.reset(); this.show(false); return; }
     const K = this.plankDef = L.plank;
     const wood = new THREE.MeshLambertMaterial({ color: 0x8a6a46 });
     // the board and two cross battens under it (so it reads as a board, not a slab): one mesh
@@ -43,11 +44,15 @@ export class RoofTraps {
     this.mesh.visible = false; this.reset(); this.show(false);
   }
   // drawn only on the rooftops (elsewhere they would only cost draw calls far down the view)
-  show(on) { this.mesh.visible = this.plank.visible = on; this.jug.visible = this.jugRing.visible = on && !this.g.jugTaken; }
+  show(on) {
+    this.mesh.visible = on;
+    if (this.plank) { this.plank.visible = on; this.jug.visible = this.jugRing.visible = on && !this.g.jugTaken; }
+  }
   reset() {
     for (const p of this.pieces) { p.t = -1; p.drop = 0; p.vy = 0; p.off = 0; p.rot = 0; p.box.on = true; }
     this.pieces.forEach((p, i) => this.place(p, i));
     this.mesh.instanceMatrix.needsUpdate = true; if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    if (!this.plank) return;
     this.pt = 0.4; this.placePlank(0);
     const J = this.g.level.spawns.jug;
     this.jug.visible = this.jugRing.visible = this.mesh.visible && !this.g.jugTaken;
@@ -72,6 +77,7 @@ export class RoofTraps {
   }
   // seconds the plank stays fully out from now (0 when it is not out), for the bot and the hint
   plankHoldLeft() {
+    if (!this.plank) return 0;
     const B = PLANK, T = B.out + B.hold + B.back + B.rest, u = ((this.pt % T) + T) % T;
     return u >= B.out && u < B.out + B.hold ? B.out + B.hold - u : 0;
   }
@@ -100,6 +106,7 @@ export class RoofTraps {
       }
     });
     if (dirty) this.mesh.instanceMatrix.needsUpdate = true;
+    if (!this.plank) return;
     // the plank
     this.pt += dt; this.placePlank(dt);
     // the jug

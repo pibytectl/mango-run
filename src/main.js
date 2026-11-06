@@ -2,13 +2,19 @@
 // (src/3d/game3d.js, loaded when Play is pressed). Round 3 (Andy: "drop the 2.5D entirely"): the 2.5D
 // side-scroller and its code are gone; git history keeps them.
 //   ?debug=auto3d   a scripted player runs the whole mission (tests)
-//   ?seg3d=<seg>    start at a segment (street, market, chase, fight, roofs, roofs2, jetty)
+//   ?seg3d=<seg>    start at a segment (street, market, chase, fight, roofs, roofs2, jetty; Mission 2: start, B, C, E, F, G)
+//   ?mission=2      Mission 2 (with ?debug=auto3d or ?seg3d it starts straight away; on the title it is the
+//                   pick only once Mission 1 is finished, remembered in localStorage)
 import * as THREE from '../vendor/three.module.min.js';
 import { UI } from './ui.js';
 import { audioInit, audioSuspend, audioWake, audioDebug, loadMusic, playMusic, setSound, soundOn, sfx } from './audio.js';
 
 const Q = new URLSearchParams(location.search);
 const DEBUG_AUTO3D = Q.get('debug') === 'auto3d';
+const Q_MISSION = Q.get('mission') === '2' ? 2 : 1;
+// missions unlocked (1 = only the first); storage can be blocked (private mode), then only the first
+function unlocked() { try { return Math.max(1, Math.min(3, +localStorage.getItem('saidi.unlocked') || 1)); } catch (e) { return 1; } }
+function refreshMissions() { const b = document.getElementById('btn-m2'); if (b) b.classList.toggle('locked', unlocked() < 2); }
 // A phone or tablet: the primary pointer is coarse. A touchscreen laptop has touch too, but its primary
 // pointer is fine (mouse or touchpad): it starts with mouse/keyboard controls (round 3: Mzee's laptop showed
 // the touch overlay and the mouse did nothing). The 3D mode switches with the input actually used.
@@ -37,20 +43,20 @@ game.audio = audioDebug;
   ui.setLoad(1);
   game.ready = true;
   toTitle();
-  if (DEBUG_AUTO3D || Q.has('seg3d')) setTimeout(() => start3D(), 300);
+  if (DEBUG_AUTO3D || Q.has('seg3d')) setTimeout(() => start3D(Q_MISSION), 300);
 })();
 
 // ---------------------------------------------------------------- the 3D mission
 let g3 = null;
 const in3D = () => !!(g3 && g3.active);
-async function start3D() {
+async function start3D(mission = 1) {
   gesture();
   if (g3) { g3.exit(); g3 = null; }
   state = '3d';
   ui.clearWorld(); ui.show('hud', false);
   try {
     const m = await import('./3d/game3d.js');
-    g3 = await m.start3D({ renderer, ui, isTouch, auto: DEBUG_AUTO3D });
+    g3 = await m.start3D({ renderer, ui, isTouch, auto: DEBUG_AUTO3D, mission });
     game.g3 = g3;
   } catch (e) {
     console.error('3D mode failed', e); game.g3Error = String(e && e.message);
@@ -60,7 +66,7 @@ async function start3D() {
 
 function toTitle() {
   if (g3) { g3.exit(); g3 = null; }
-  state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.clearWorld();
+  state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.clearWorld(); refreshMissions();
   playMusic('title', 0.55);
 }
 
@@ -86,7 +92,9 @@ for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) a
 
 // ---------------------------------------------------------------- buttons
 const on = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); sfx.tap(); fn(); });
-on('btn-start3d', () => start3D());
+on('btn-start3d', () => start3D(1));
+on('btn-m2', () => { if (unlocked() >= 2) start3D(2); else { const b = document.getElementById('btn-m2'); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); } });
+on('btn-next', () => start3D(2));
 on('btn-how', () => { ui.screen('screen-how'); });
 on('btn-how-close', () => { ui.screen('screen-title'); });
 const toggleSound = () => { setSound(!soundOn()); ui.setSoundLabel(soundOn()); localStorage.setItem('saidi.sound', soundOn() ? '1' : '0'); };
