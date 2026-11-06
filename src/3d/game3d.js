@@ -270,6 +270,12 @@ class Game3D {
     $('bars3d').classList.remove('hidden'); this.showControls(false); $('toast').classList.add('hidden'); this.ui.toastT = 0;
     try { await fn(); } catch (e) { console.error(e); this.log('cutscene error', e.message); }
     $('bars3d').classList.add('hidden');
+    // a skip resolves the waits at once, so the cutscene ends before the next frame's stepMovers can snap its
+    // walks: finish them here, while skip is still set. A walk of the hero's own that outlived the cutscene
+    // would keep steering him in play (Andy: "the character is drifting" at the street start), so it ends too.
+    if (this.skip) this.stepMovers(0);
+    if (this.movers) for (const m of this.movers) if (m.who === this.hero) { const b = m.who.body; b.pos.x = m.x; b.pos.z = m.z; if (m.face !== undefined) m.who.yaw = m.face; m.who.anim.play('idle', { loop: true, fade: 0.25 }); m.done = true; m.res && m.res(); }
+    if (this.movers) this.movers = this.movers.filter((m) => !m.done);
     this.skip = false;
   }
   wait(sec) { if (this.skip) return Promise.resolve(); return new Promise((res) => this.waits.push({ t: sec, res })); }
