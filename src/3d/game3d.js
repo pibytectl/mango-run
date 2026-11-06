@@ -15,12 +15,15 @@ import { sfx3, Engine } from './sfx3d.js';
 import { Chase, makeTok, makeFerry } from './vehicle.js';
 import { Fight, Fighter } from './fight.js';
 import { Bot } from './bot.js';
+import { Hazards } from './hazards.js';
 import { sfx, playMusic, setMusicRate, loadMusic, audioInit, loadAmbient, setAmbient } from '../audio.js';
 import { num, clock } from '../strings.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = (id) => document.getElementById(id);
-const LIMIT = 450;
+// Round 3 (Andy: "too easy"): the sun sets in 4:20 instead of 7:30. The bot plays the route clean in about
+// 2:15 of sun; the one-minute star needs a run within ~1.5x of that. A fail restores at least 75 s.
+const LIMIT = 260;
 const STEP = 1 / 60;
 const SEG = {
   street: { ar: '١ · الشارع', en: 'The Street', oar: 'اجري ناحية النيل... المعدية مستنياك', oen: 'Run toward the Nile... the ferry is waiting' },
@@ -73,6 +76,7 @@ class Game3D {
     this.cam = new ChaseCam(this.camera, this.phys);
     this.voice = new Voice();
     this.engine = new Engine();
+    this.haz = new Hazards(this); this.sfxSplash = () => sfx3.splash();
     this.pigeons = new Pigeons(this.scene);
     this.goat = new Goat(this.scene); this.goat.pos.set(-7, 0, -238); this.goat.yaw = 0;
     this.chase = new Chase(this);
@@ -192,25 +196,28 @@ class Game3D {
     this.run(() => this.cutIntro());
   }
   resetRun() {
-    this.timeLeft = LIMIT; this.mangoes = 12; this.stolen = 0; this.hp = 6; this.lost = 0;
+    this.timeLeft = LIMIT; this.mangoes = 12; this.stolen = 0; this.hp = 6; this.lost = 0; this.hpLost = 0;
     this.fightTries = 0; this.fightWon = false; this.elapsed = 0; this.deaths = 0;
-    this.cp = null; this.seg = 'intro';
+    this.cp = null; this.seg = 'intro'; this.lastCpSeg = null;
     this.syncHud(true);
   }
   defaultCp(seg) {
     const L = this.level.spawns;
-    const base = { street: [L.street, Math.PI, 12, 0, LIMIT - 5], market: [L.cpMarket, Math.PI, 12, 0, LIMIT - 60], chase: [L.tokPlayer, Math.PI, 6, 6, LIMIT - 110],
-      fight: [L.fight, Math.PI, 8, 4, LIMIT - 190], roofs: [V(-1.5, 0, -912), Math.PI, 12, 0, LIMIT - 260], jetty: [L.cpJetty, Math.PI, 12, 0, LIMIT - 380], roofs2: [L.cpRoof2, Math.PI, 12, 0, LIMIT - 320] }[seg];
+    const base = { street: [L.street, Math.PI, 12, 0, LIMIT - 5], market: [L.cpMarket, Math.PI, 12, 0, LIMIT - 30], chase: [L.tokPlayer, Math.PI, 6, 6, LIMIT - 62],
+      fight: [L.fight, Math.PI, 8, 4, LIMIT - 115], roofs: [V(-1.5, 0, -912), Math.PI, 12, 0, LIMIT - 135], jetty: [L.cpJetty, Math.PI, 12, 0, LIMIT - 175], roofs2: [L.cpRoof2, Math.PI, 12, 0, LIMIT - 160] }[seg];
     return { seg: seg === 'roofs2' ? 'roofs' : seg, sub: seg === 'roofs2' ? 'r5' : null, pos: base[0].clone(), yaw: base[1], mangoes: base[2], stolen: base[3], time: base[4] };
   }
   saveCp(seg, pos, yaw, sub) {
     this.cp = { seg, sub, pos: pos.clone(), yaw, mangoes: this.mangoes, stolen: this.stolen, time: this.timeLeft };
+    // round 3: a new stretch gives back one heart (the hazards cost more now; hearts still carry over)
+    if (this.elapsed > 1 && seg !== this.lastCpSeg) this.hp = Math.min(6, this.hp + 2);
+    this.lastCpSeg = seg;
     this.log('checkpoint', seg, sub || '', { t: +this.elapsed.toFixed(1), mangoes: this.mangoes });
     if (this.elapsed > 1) this.toast({ ar: 'اتحفظ مكانك', en: 'Checkpoint' }, 1.6);
   }
   restoreCp() {
     const c = this.cp;
-    this.mangoes = c.mangoes; this.stolen = c.stolen; this.timeLeft = Math.max(c.time, 120); this.hp = 6;
+    this.mangoes = c.mangoes; this.stolen = c.stolen; this.timeLeft = Math.max(c.time, 75); this.hp = 6; this.haz.clear();
     this.voice.stop(); this.voice.hide(); this.mangoesFx.clear(); this.clearWorldUi(); this.ui.hideToast(); this.clearSticky();
     this.hero.cine = false; this.hero.ride = false; this.hero.body.h = 1.75; this.hero.lockTarget = null; this.hero.targets = [];
     this.chase.stop(); this.chase.hide(); this.fight.stop(); this.engine.stop();
@@ -371,6 +378,7 @@ class Game3D {
   syncHud(force) {
     const ui = this.ui;
     if (force || this._hp !== this.hp) {
+      if (this._hp !== undefined && this.hp < this._hp && this.state === 'play') this.hpLost = (this.hpLost || 0) + (this._hp - this.hp);
       const pop = this._hp !== undefined && this.hp < this._hp ? Math.floor(this.hp / 2) : -1;
       this._hp = this.hp;
       ui.setHalfHearts(this.hp, pop);
@@ -620,7 +628,9 @@ class Game3D {
     else this.cam.release(h.pos, Math.PI);   // hand the camera back looking straight down the street
     this.npc.tea.show(true); this.npc.tea.place(L.tea.x, 0, L.tea.z, 0.7);
     if (!this.cp || this.cp.seg !== 'street') this.saveCp('street', V(L.street.x, 0, L.street.z), Math.PI);
-    this.street = { toks: [false, false, false], ballDone: false, kidsOn: false, thief: 0 };
+    this.street = { toks: [false, false, false, false, false], ballDone: false, kidsOn: false, thief: 0, buckets: [-117, -152, -172] };
+    // a donkey cart working up and down the left side of the street (round 3: it was a parked cart)
+    this.haz.clear(); this.haz.addCart('z', -3.4, -104, -128, 1.6, 0.05);
     for (const [i, k] of this.npc.kids.entries()) { k.show(true); k.place(L.kids[i].x, 0, L.kids[i].z, -1.2 + i); }
     this.ball.p.copy(L.ball); this.ball.v.set(0, 0, 0); this.ball.live = true; this.ball.m.visible = true; this.ball.kicked = false;
     this.play('street');
@@ -637,8 +647,9 @@ class Game3D {
       const t = this.streetToks[i];
       const d = Math.hypot(t.x - hp.x, t.z - hp.z);
       // drivers slow down a little when they see him (fair, readable)
-      const k = d < 10 ? 0.8 : 1;
+      const k = d < 10 ? 0.92 : 1;
       t.x += t.vx * dt * k; t.z += t.vz * dt * k;
+      if (t.turn && t.z <= t.turn.z) { t.vx = t.turn.vx; t.vz = 0; t.xEnd = t.turn.xEnd; t.turn = null; t.tok.root.rotation.y = Math.atan2(t.vx, t.vz); }
       t.tok.root.position.set(t.x, 0, t.z);
       t.tok.lean.position.y = Math.abs(Math.sin(t.z * 1.7 + t.x)) * 0.03;
       if (!t.honk && d < 16) { t.honk = true; sfx.horn(); this.voice.bark(['s1', 's2'], 'tok', 6); if (this.streetHint !== 'tok' && !this.stickyOn()) { this.streetHint = 'tok'; this.hint('tok', { ar: 'توك توك جاي! اتفادى على جنب', en: 'Tok-tok coming! Step aside' }, 2.2); } }
@@ -647,13 +658,13 @@ class Game3D {
       const lx = (hp.x - t.x) * c - (hp.z - t.z) * s, lz = (hp.x - t.x) * s + (hp.z - t.z) * c;
       if (!t.hit && Math.abs(lx) < 0.68 + 0.3 && Math.abs(lz) < 1.35 + 0.3 && hp.y < 1.5 && h.state !== 'vault') {
         t.hit = true;
-        this.hurt(2, t.x, t.z, true);
+        this.hurt(2, t.x, t.z, true); this.log('tok hit', { hp: this.hp, z: Math.round(hp.z) });
         this.dropMango(hp.x, hp.y + 1.6, hp.z);
         this.fx.emit(hp.x, 0.5, hp.z, 14, { speed: 3, up: 1.5 });
         sfx3.bump();
       }
       const bz = this.level.spawns.marks.barrier - 1.2; // a tok-tok coming up from the market stops at the barrier
-      if (t.z > hp.z + 30 || Math.abs(t.x) > 40 || t.z > PLAZA_Z - 2 && t.vz > 0 && t.z > hp.z + 10 || (t.vz > 0 && t.z > bz && t.z0 < bz)) { this.scene.remove(t.tok.root); this.streetToks.splice(i, 1); }
+      if ((t.vz < 0 && t.z < hp.z - 30) || (t.vz >= 0 && t.z > hp.z + 30) || Math.abs(t.x) > 40 || (t.xEnd && t.x > t.xEnd) || t.z > PLAZA_Z - 2 && t.vz > 0 && t.z > hp.z + 10 || (t.vz > 0 && t.z > bz && t.z0 < bz)) { this.scene.remove(t.tok.root); this.streetToks.splice(i, 1); }
     }
   }
   segStep(dt, I) {
@@ -664,6 +675,19 @@ class Game3D {
       if (!S.toks[0] && z < PLAZA_Z - 6) { S.toks[0] = true; this.spawnStreetTok(-0.6, M.wall + 6, 0, 6.5); }
       if (!S.toks[1] && z < PLAZA_Z + 6) { S.toks[1] = true; const t = this.spawnStreetTok(30, M.cross, -9, 0, 0xffd07a); t.z0 = M.cross; }
       if (!S.toks[2] && z < M.barrier - 1.5) { S.toks[2] = true; const t = this.spawnStreetTok(-1.2, -205, 0, 7, 0xa0e0a0); t.z0 = -205; }
+      // round 3: a second tok-tok through the side-alley crossing right behind the first (other lane), and one
+      // that comes up fast from behind (he hears it honk) and turns off into the kids' square
+      if (S.toks[1] && !S.toks[3] && (S.crossT = (S.crossT || 0) + dt) > 2.3) { S.toks[3] = true; const t = this.spawnStreetTok(30, M.cross - 1.6, -8.5, 0, 0xb0a0ff); t.z0 = M.cross; }
+      if (!S.toks[4] && z < M.cross + 3) { S.toks[4] = true; const t = this.spawnStreetTok(1.5, z + 9, 0, -12, 0xff9a9a); t.turn = { z: -113.5, vx: 8, xEnd: 14 }; }
+      // water from a balcony: a ring where he is heading, then the splash
+      if (S.buckets.length && z < S.buckets[0]) {
+        S.buckets.shift();
+        // aimed where he will be (at most 5 m ahead), 1.05 s of warning
+        const v = h.body.vel, lead = Math.min(1, 5 / (Math.hypot(v.x, v.z) * 1.05 + 1e-3)) * 1.05;
+        this.haz.bucket(THREE.MathUtils.clamp(h.pos.x + v.x * lead, -4.3, 4.3), h.pos.z + v.z * lead, 1.05);
+        this.hint('bucket', { ar: 'حاسب! حد بيدلق مية من البلكونة', en: 'Look out! Someone is emptying a bucket from a balcony' }, 2);
+      }
+      this.haz.step(dt);
       this.stepStreetToks(dt);
       this.kidsStep(dt);
       this.thiefGlimpse(dt);
@@ -672,7 +696,7 @@ class Game3D {
       for (const w of h.body.walls) if (w.box.kind === 'laundry' && !w.box.barked) { w.box.barked = true; this.voice.bark('s5', 'laundry', 10); }
       if (z < M.wall + 9 && z > M.wall + 0.5 && h.pos.y < 0.5) this.stickyHint('vault', { ar: 'اجري ونُط عشان تعدّي من فوق السور الواطي', en: 'Run and jump to vault the low wall' }, 'jump');
       if (z < M.barrier + 9 && z > M.barrier + 0.5 && h.pos.y < 1.5) this.stickyHint('climb', { ar: 'اجري على الحاجز ونُط... هتطلع عليه', en: 'Run at the barrier and jump to climb it' }, 'jump');
-      if (z < -186) { this.street = null; this.clearSticky(); for (const t of this.streetToks) this.scene.remove(t.tok.root); this.streetToks = []; for (const k of this.npc.kids) k.show(false); this.ball.live = false; this.ball.m.visible = false; this.npc.tea.show(false); this.npc.thief.show(false); this.run(() => this.cutSnatch()); }
+      if (z < -186) { this.street = null; this.clearSticky(); this.haz.clear(); for (const t of this.streetToks) this.scene.remove(t.tok.root); this.streetToks = []; for (const k of this.npc.kids) k.show(false); this.ball.live = false; this.ball.m.visible = false; this.npc.tea.show(false); this.npc.thief.show(false); this.run(() => this.cutSnatch()); }
     } else if (this.seg === 'market') this.marketStep(dt);
     else if (this.seg === 'roofs') this.roofsStep(dt);
     else if (this.seg === 'jetty') this.jettyStep(dt);
@@ -771,12 +795,15 @@ class Game3D {
     this.goatBox = this.goatBox || this.phys.add(0, 0, 0, 0.1, 0.1, 0.1, { dynamic: true, kind: 'goat', vault: true });
     this.goatBox.on = true;
     this.hero.targets = [{ pos: T.pos, hittable: () => !this.thiefRun.done }];
+    // round 3: donkey carts working the lanes on the thief's route, on the side of the lane he does not use
+    this.haz.clear();
+    this.haz.addCart('z', 7.55, -229, -247, 1.5, 0.35); this.haz.addCart('z', -7.55, -251, -269, 1.5, 0.7); this.haz.addCart('z', 1.2, -275, -294, 1.7, 0.15);
     this.play('market');
     setTimeout(() => this.voice.say('m4', 2), 400);
   }
   thiefHit() {
     const R = this.thiefRun, T = this.npc.thief;
-    R.stun = 0.75; R.hits++; R.limp = 2.5;
+    R.stun = 0.6; R.hits++; R.limp = 1.6;
     T.anim.play('hit_react', { fade: 0.04, restart: true });
     // the first two good hits shake two mangoes each out of his bag; after that he just stumbles and runs
     const n = R.drops < 2 ? Math.min(2, this.stolen) : 0;
@@ -798,18 +825,20 @@ class Game3D {
     else {
       const tgt = R.path[R.i];
       // he looks back and taunts when far, bursts when you are on him, limps for a while after a hit
-      let sp = 6.3;
-      if (d > 18) { sp = 4.4; if ((R.taunt -= dt) <= 0) { R.taunt = 7; this.voice.bark('c1', 'taunt', 6); } }
-      else if (d > 11) sp = 5.6; else if (d < 4) sp = 7.0;
+      // round 3: faster, and less waiting for a slow Radwan (was 6.3 / 4.4 far / 7.0 close / limp 5.2 for 2.5 s)
+      let sp = 6.8;
+      if (d > 18) { sp = 5.3; if ((R.taunt -= dt) <= 0) { R.taunt = 7; this.voice.bark('c1', 'taunt', 6); } }
+      else if (d > 11) sp = 6.2; else if (d < 4) sp = 7.6;
       R.limp = Math.max(0, (R.limp || 0) - dt);
-      if (R.limp > 0) sp = Math.min(sp, 5.2);
+      if (R.limp > 0) sp = Math.min(sp, 5.8);
       if (R.drops >= 2 && R.limp <= 0) sp = Math.max(sp, 7.2);
       const rem = T.steer(dt, tgt.x, tgt.z, sp, 12);
       T.move(dt, true);
       T.locoAnim(sp);
       if (rem < 1.0) { R.i++; if (R.i % 4 === 0 && d < 9) this.voice.bark('c3', 'make way', 6); }
-      if (R.i >= R.path.length) { R.done = true; this.goatBox.on = false; this.run(() => this.cutTokStart(false)); return; }
+      if (R.i >= R.path.length) { R.done = true; this.goatBox.on = false; this.haz.clear(); this.run(() => this.cutTokStart(false)); return; }
     }
+    this.haz.step(dt);
     // the goat strolls across the middle lane as he gets close
     if (this.goatState === 'wait' && h.pos.z < -226) { this.goatState = 'walk'; this.goat.speed = 1; sfx.bleat(); }
     if (this.goatState === 'walk') {
@@ -869,7 +898,16 @@ class Game3D {
   onChase(e, P, o) {
     const C = this.chase;
     if (e === 'wall') { sfx3.scrape(); this.cam.shake(0.2); this.fx.emit(P.x, 0.3, P.z, 6, { color: 0xffd080, speed: 3, up: 1, size: 0.08, life: 0.3, alpha: 1 }); }
-    if (e === 'crash') { sfx3.crash(); this.cam.shake(0.6); this.fx.emit(P.x, 0.6, P.z, 16, { speed: 3, up: 1.5 }); this.voice.bark(['t6'], 'tokcrash', 7, 2); this.log('chase crash', { s: Math.round(P.s) }); }
+    // round 3: a crash costs half a heart (it only cost speed), and the crate spills a mango onto the road
+    if (e === 'crash') {
+      sfx3.crash(); this.cam.shake(0.6); this.fx.emit(P.x, 0.6, P.z, 16, { speed: 3, up: 1.5 }); this.voice.bark(['t6'], 'tokcrash', 7, 2);
+      this.hp = Math.max(0, this.hp - 1); $('vig3d').classList.remove('flash'); void $('vig3d').offsetWidth; $('vig3d').classList.add('flash');
+      if (this.mangoes > 0 && Math.random() < 0.5) { this.mangoes--; sfx.spill(); this.mangoesFx.spawn(P.x, 1.4, P.z, (Math.random() - 0.5) * 3, 4, (Math.random() - 0.5) * 3, 5); }
+      this.stats.crashes = (this.stats.crashes || 0) + 1;
+      this.log('chase crash', { s: Math.round(P.s), hp: this.hp });
+    }
+    if (e === 'brake') { sfx.horn(); this.hint('brake', { ar: 'بيدوس فرامل! خبطه من الجنب، مش من ورا', en: 'He brakes! Ram him from the side, not from behind' }, 2.4); }
+    if (e === 'rear') this.voice.bark('t5', 'rear', 4, 1);
     if (e === 'bump') {
       sfx3.bump(); this.cam.shake(0.4); this.hitStop = 0.05;
       const T = C.thief;
@@ -963,9 +1001,9 @@ class Game3D {
     await this.say('f3');
     h.cine = false;
     this.cam.release(h.pos, h.yaw);
-    this.fightTries++;
+    this.fightTries++; this.fightHurt = 0;
     const F = this.fight;
-    this.fighters = this.fighters || [new Fighter(N.thief, 11, 'thief'), new Fighter(N.buddyA, 8, 'buddyA'), new Fighter(N.buddyB, 8, 'buddyB')];
+    this.fighters = this.fighters || [new Fighter(N.thief, 12, 'thief'), new Fighter(N.buddyA, 9, 'buddyA'), new Fighter(N.buddyB, 9, 'buddyB')];
     for (const f of this.fighters) f.npc.fighting = true;
     F.start(this.fighters);
     h.targets = this.fighters;
@@ -976,7 +1014,7 @@ class Game3D {
     if (e === 'telegraph') { sfx3.telegraph(); if (Math.random() < 0.3) this.voice.bark('f7', 'f7', 10); }
     if (e === 'hit' || e === 'down') { if (f.name !== 'thief' && Math.random() < 0.5) this.voice.bark('f6', 'f6', 6); else if (Math.random() < 0.35) this.voice.bark(['f4', 'f5'], 'radwanHit', 7); if (e === 'down') sfx3.thump(); }
     if (e === 'ko') { sfx3.thump(); this.cam.shake(0.5); this.hitStop = 0.16; this.fx.emit(f.pos.x, 0.2, f.pos.z, 16, { speed: 2.5, up: 0.8 }); this.voice.bark(['f4', 'f5'], 'radwanHit', 4); this.log('ko', f.name); }
-    if (e === 'heroHit') { this.hp = Math.max(0, this.hp - 1); sfx3.punch(); sfx3.hurt(); this.cam.shake(0.4); $('vig3d').classList.remove('flash'); void $('vig3d').offsetWidth; $('vig3d').classList.add('flash'); if (Math.random() < 0.5) this.voice.bark(['r3'], 'hurt', 6); }
+    if (e === 'heroHit') { this.hp = Math.max(0, this.hp - 1); this.fightHurt = (this.fightHurt || 0) + 1; sfx3.punch(); sfx3.hurt(); this.cam.shake(0.4); $('vig3d').classList.remove('flash'); void $('vig3d').offsetWidth; $('vig3d').classList.add('flash'); if (Math.random() < 0.5) this.voice.bark(['r3'], 'hurt', 6); }
     if (e === 'blocked') { sfx3.clack(); this.cam.shake(0.15); const h = this.hero.pos; this.fx.emit(h.x, h.y + 1.9, h.z, 8, { color: 0xfff0c0, speed: 3, up: 1, life: 0.25, size: 0.1, alpha: 1 }); this.stats.blocks = (this.stats.blocks || 0) + 1; }
     if (e === 'dodged') { this.stats.dodges = (this.stats.dodges || 0) + 1; }
     if (e === 'armor') { sfx3.clack(); this.hint('armor', { ar: 'وهو بيضرب، الضرب الخفيف مش هيوقفه... صدّ أو اتفادى!', en: 'Mid-punch, light hits will not stop him: block or dodge!' }, 2.6, 'block'); }
@@ -1046,7 +1084,7 @@ class Game3D {
     if (this.roofCp !== 'r1' && this.roofCp !== 'r5' && p.y > ROOF.r1 - 0.1 && p.z < -918) { this.roofCp = 'r1'; this.saveCp('roofs', V(p.x, p.y, p.z), h.yaw, 'r1'); }
     if (this.roofCp === 'r1' && p.y > ROOF.r5 - 0.2 && p.z < -1000.5) { this.roofCp = 'r5'; this.saveCp('roofs', V(p.x, p.y, p.z), h.yaw, 'r5'); }
     if (p.z < -994 && p.z > -1000 && Math.abs(p.x) < 1.4 && p.y < ROOF.b) this.hint('walljump', { ar: 'نُط على الحيطة، ونُط تاني وانت لازق فيها', en: 'Jump at a wall, then jump again off it' }, 3, 'jump');
-    if (p.z < -935 && p.z > -940.5 && p.y > 4) this.hint('gap', { ar: 'اجري ونُط على السطح اللي جاي', en: 'Run and jump to the next roof' }, 2.2, 'jump');
+    if (p.z < -933 && p.z > -940.5 && p.y > 4) this.hint('gap', { ar: 'المسافة كبيرة! اجري على آخرك ونُط من الحرف', en: I3.touch ? 'A wide gap! Stick all the way (sprint), jump from the edge' : 'A wide gap! Sprint (Shift) and jump from the edge' }, 2.6, 'jump');
     if (p.z < -943 && p.z > -948 && p.y > 4) this.hint('laundry2', { ar: 'غسيل تاني! اتزحلق', en: 'More laundry! Slide' }, 2, 'slide');
     // a fall into the alleys between the roofs
     const onRoute = p.z < -918.5 && p.z > -1040;
@@ -1110,7 +1148,7 @@ class Game3D {
   async cutFinale() {
     const h = this.hero, F = this.ferry, N = this.npc;
     this.seg = 'finale';
-    this.result = { mangoes: this.mangoes, timeLeft: Math.max(0, this.timeLeft), elapsed: this.elapsed, fightFirstTry: this.fightWon };
+    this.result = { mangoes: this.mangoes, timeLeft: Math.max(0, this.timeLeft), elapsed: this.elapsed, fightFirstTry: this.fightWon, fightHurt: this.fightHurt || 0, hpLost: this.hpLost || 0, deaths: this.deaths };
     this.log('finish', this.result, { deaths: this.deaths });
     h.cine = true; h.body.vel.set(0, 0, 0);
     sfx.win(); playMusic('title', 0.55); sfx3.cheer();
@@ -1137,7 +1175,8 @@ class Game3D {
   }
   end() {
     const r = this.result;
-    const stars = [r.mangoes >= 10, r.timeLeft >= 60, r.fightFirstTry];
+    // round 3: stars that take skill (were: 10 mangoes, a minute of sun, the fight on the first try)
+    const stars = [r.mangoes >= 12, r.timeLeft >= 60, r.fightFirstTry && r.fightHurt <= 2];
     this.state = 'end';
     this.showControls(false);
     this.ui.show('hud', false);
@@ -1150,9 +1189,9 @@ class Game3D {
     $('end-fights').textContent = r.fightFirstTry ? 'من أول مرة' : 'كسبتها';
     const rows = $('end-checks');
     rows.innerHTML = [
-      [stars[0], 'رجّعت ١٠ مانجايات أو أكتر', '10+ mangoes recovered'],
+      [stars[0], 'وصّلت الاتناشر مانجاية كلهم', 'Delivered all twelve mangoes'],
       [stars[1], 'وصلت والشمس لسه فاضل لها دقيقة', 'Made it with a minute of sun to spare'],
-      [stars[2], 'كسبت خناقة الحارة من أول مرة', 'Won the alley fight on the first try'],
+      [stars[2], 'كسبت خناقة الحارة من أول مرة ومن غير ما تخسر أكتر من قلب', 'Won the alley fight first try, losing at most one heart'],
     ].map(([ok, a, e]) => `<div class="chk${ok ? ' ok' : ''}"><b>${ok ? '★' : '☆'}</b><span class="ar">${a}</span><em class="en" dir="ltr">${e}</em></div>`).join('');
     const ranks = [
       { ar: 'وصلت، وده الأهم. المرة الجاية النجوم كلها!', en: 'You made it, that\'s what counts. Next time, every star!' },

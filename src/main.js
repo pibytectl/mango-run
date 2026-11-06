@@ -1,16 +1,14 @@
+// The Mango Run: bootstrap. One WebGL renderer, the menus, audio unlock on the first gesture, and the 3D mission
+// (src/3d/game3d.js, loaded when Play is pressed). Round 3 (Andy: "drop the 2.5D entirely"): the 2.5D
+// side-scroller and its code are gone; git history keeps them.
+//   ?debug=auto3d   a scripted player runs the whole mission (tests)
+//   ?seg3d=<seg>    start at a segment (street, market, chase, fight, roofs, roofs2, jetty)
 import * as THREE from '../vendor/three.module.min.js';
-import { loadAll } from './gfx.js';
-import { World } from './world.js';
 import { UI } from './ui.js';
-import { initInput, pollInput, input, clearInput } from './input.js';
 import { audioInit, audioSuspend, audioWake, audioDebug, loadMusic, playMusic, setSound, soundOn, sfx } from './audio.js';
-import { INTRO, FINALE, HINTS } from './strings.js';
 
 const Q = new URLSearchParams(location.search);
-const DEBUG_AUTO = Q.get('debug') === 'auto';
 const DEBUG_AUTO3D = Q.get('debug') === 'auto3d';
-const START_SEG = Q.has('seg') ? +Q.get('seg') : null;
-const SHOW_FPS = Q.has('fps') || DEBUG_AUTO;
 // A phone or tablet: the primary pointer is coarse. A touchscreen laptop has touch too, but its primary
 // pointer is fine (mouse or touchpad): it starts with mouse/keyboard controls (round 3: Mzee's laptop showed
 // the touch overlay and the mouse did nothing). The 3D mode switches with the input actually used.
@@ -23,59 +21,33 @@ const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: Q.get('aa') !== '0', alpha: false, powerPreference: 'high-performance' });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0x1a0b05);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setSize(innerWidth, innerHeight, false);
 stage.appendChild(renderer.domElement);
-const MAX_DPR = Math.min(window.devicePixelRatio || 1, isTouch ? 1.75 : 1.5);
-let dprScale = 1;
-const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(-9, 9, 4.2, -4.2, 0.1, 100);
-camera.position.z = 10;
 
-let world = null;
 let state = 'loading';
-const game = { state: () => state, stats: { fpsSamples: [], segTimes: {}, deaths: 0, coverChecks: 0, heroCovered: 0, obstacleCovered: 0, coveredWhat: {} }, log: [] };
+const game = { state: () => state, log: [] };
 window.__saidi = game;
 game.audio = audioDebug;
-const glog = (...a) => { const s = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '); game.log.push(s); console.log('[saidi]', s); };
 
-function resize() {
-  if (in3D()) return;
-  const w = innerWidth, h = innerHeight;
-  renderer.setPixelRatio(Math.max(1, MAX_DPR * dprScale));
-  renderer.setSize(w, h, false);
-  if (world) world.resize(w / h);
-}
-addEventListener('resize', resize);
-
-// ---------------------------------------------------------------- boot
+// ---------------------------------------------------------------- boot: fonts, then the title
 (async function boot() {
-  ui.screen('screen-loading');
-  try {
-    await loadAll((p) => ui.setLoad(p));
-  } catch (e) { console.error('load failed', e); }
-  world = new World(scene, camera, ui);
-  game.world = world;
-  if (Q.has('zoom')) world.zoom = +Q.get('zoom');
-  world.onFinish = onFinish;
-  world.onTimeout = () => fail('time');
-  world.onOutOfHearts = () => fail('hearts');
-  resize();
-  // warm up the GPU with every texture once, so the first play frame does not hitch
-  world.render(1, 0); renderer.compile(scene, camera); renderer.render(scene, camera);
+  ui.screen('screen-loading'); ui.setLoad(0.3);
+  try { await Promise.race([document.fonts.load('900 40px CairoGame'), new Promise((r) => setTimeout(r, 3000))]); } catch (e) {}
+  ui.setLoad(1);
   game.ready = true;
-  glog('loaded', { textures: Object.keys((await import('./gfx.js')).tex).length });
   toTitle();
-  if (DEBUG_AUTO) setTimeout(() => startGame(), 300);
   if (DEBUG_AUTO3D || Q.has('seg3d')) setTimeout(() => start3D(), 300);
 })();
 
-// ---------------------------------------------------------------- 3D mode (loaded only when chosen)
+// ---------------------------------------------------------------- the 3D mission
 let g3 = null;
 const in3D = () => !!(g3 && g3.active);
 async function start3D() {
   gesture();
   if (g3) { g3.exit(); g3 = null; }
   state = '3d';
-  ui.clearWorld(); ui.show('hud', false); ui.show('controls', false);
+  ui.clearWorld(); ui.show('hud', false);
   try {
     const m = await import('./3d/game3d.js');
     g3 = await m.start3D({ renderer, ui, isTouch, auto: DEBUG_AUTO3D });
@@ -87,8 +59,8 @@ async function start3D() {
 }
 
 function toTitle() {
-  if (g3) { g3.exit(); g3 = null; resize(); }
-  state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.show('controls', false); ui.clearWorld();
+  if (g3) { g3.exit(); g3 = null; }
+  state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.clearWorld();
   playMusic('title', 0.55);
 }
 
@@ -101,7 +73,7 @@ function gesture(e) {
     loadMusic('title', 'assets/audio/title.mp3');
     loadMusic('run', 'assets/audio/run.mp3');
     if (state === 'title') playMusic('title', 0.55);
-    if (isTouch && !DEBUG_AUTO) {
+    if (isTouch && !DEBUG_AUTO3D) {
       const el = document.documentElement;
       const fs = el.requestFullscreen || el.webkitRequestFullscreen;
       if (fs) { try { const p = fs.call(el, { navigationUI: 'hide' }); if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {}); } catch (e) {} }
@@ -121,158 +93,22 @@ const toggleSound = () => { setSound(!soundOn()); ui.setSoundLabel(soundOn()); l
 on('btn-sound', toggleSound); on('btn-sound2', toggleSound);
 const toggleSubs = () => ui.setSubs(!ui.subs);
 on('btn-subs', toggleSubs); on('btn-subs2', toggleSubs);
-on('btn-pause', () => (in3D() ? g3.pause() : pause()));
-on('btn-resume', () => { audioInit('resume'); if (in3D()) g3.resume(); else resume(); });
-on('btn-restart-cp', () => { if (in3D()) return g3.restartCp(); ui.screen(null); world.restartFromCheckpoint(); resume(); });
+on('btn-pause', () => in3D() && g3.pause());
+on('btn-resume', () => { audioInit('resume'); if (in3D()) g3.resume(); });
+on('btn-restart-cp', () => in3D() && g3.restartCp());
 on('btn-menu', () => toTitle());
 on('btn-menu2', () => toTitle());
-on('btn-retry', () => { if (in3D()) return g3.retry(); ui.screen(null); world.restartFromCheckpoint(failKind); state = 'play'; ui.show('hud', true); ui.show('controls', true); clearInput(); });
-on('btn-again', () => (in3D() ? g3.again() : startGame(true)));
-on('btn-skip', () => ui.dialogSkip && ui.dialogSkip());
-document.getElementById('dialog').addEventListener('click', () => ui.dialogNext && ui.dialogNext());
+on('btn-retry', () => in3D() && g3.retry());
+on('btn-again', () => in3D() && g3.again());
 if (localStorage.getItem('saidi.sound') === '0') setSound(false);
 ui.setSoundLabel(soundOn()); ui.setSubs(ui.subs);
 
-initInput(() => { if (in3D()) { if (g3.state === 'play') g3.pause(); else if (g3.state === 'paused') g3.resume(); return; } if (state === 'play') pause(); else if (state === 'paused') resume(); }, () => { if (state === 'intro' || state === 'finale') ui.dialogNext && ui.dialogNext(); });
-
-// ---------------------------------------------------------------- flow
-function startGame(skipIntro) {
-  gesture();
-  world.resetRun();
-  ui.clearWorld();
-  ui.screen(null);
-  if (START_SEG !== null) {
-    const c = world.checkpoints[Math.max(0, Math.min(3, START_SEG))];
-    world.cp = { x: c.x + 0.6, y: c.y, mangoes: 12, time: 270 - [0, 50, 95, 150][START_SEG] , seg: c.seg };
-    world.timeLeft = world.cp.time;
-    for (const tr of world.triggers) if (tr.x < c.x) tr.fired = true;
-    for (const k of world.checkpoints) if (k.x <= c.x) { k.lit = true; }
-    world.restartFromCheckpoint();
-    beginPlay();
-    return;
-  }
-  if (skipIntro) { beginPlay(); return; }
-  state = 'intro';
-  ui.show('hud', false); ui.show('controls', false);
-  playMusic('title', 0.45);
-  ui.dialog(INTRO, 'cut_intro', beginPlay);
-  if (DEBUG_AUTO) autoAdvance();
-}
-function autoAdvance() {
-  const iv = setInterval(() => { if (state !== 'intro' && state !== 'finale') { clearInterval(iv); return; } ui.dialogNext && ui.dialogNext(); }, 700);
-}
-function beginPlay() {
-  state = 'play';
-  ui.show('hud', true); ui.show('controls', true);
-  world.syncHud();
-  playMusic('run', 0.5);
-  clearInput();
-  if (DEBUG_AUTO) input.bot = { trace: [] };
-  world.hint(isTouch ? HINTS.start : HINTS.startKeys, 'right');
-  game.stats.startAt = performance.now();
-  glog('play', { seg: world.segment });
-}
-function pause() {
-  if (state !== 'play') return;
-  state = 'paused'; ui.screen('screen-pause'); clearInput();
-}
-function resume() { if (state !== 'paused') return; ui.screen(null); state = 'play'; clearInput(); }
-let failKind = 'hearts';
-function fail(kind) {
-  if (state !== 'play') return;
-  failKind = kind; state = 'fail'; game.stats.deaths++;
-  glog('fail', kind, { x: Math.round(world.hero.x) });
-  ui.show('controls', false);
-  ui.fail(kind);
-  if (DEBUG_AUTO) setTimeout(() => document.getElementById('btn-retry').click(), 800);
-}
-function onFinish() {
-  if (state !== 'play') return;
-  state = 'finale';
-  const res = { mangoes: world.mangoes, time: world.elapsed, stars: 1 + (world.mangoes >= 9 ? 1 : 0) + (world.mangoes >= 12 ? 1 : 0) };
-  game.result = res;
-  glog('finish', res, { deaths: game.stats.deaths, wallSec: Math.round((performance.now() - game.stats.startAt) / 1000) });
-  ui.show('hud', false); ui.show('controls', false); ui.clearWorld();
-  sfx.win(); playMusic('title', 0.55);
-  ui.dialog(FINALE(world.mangoes), 'cut_finale', () => { state = 'end'; ui.end(res); glog('end-screen'); });
-  if (DEBUG_AUTO) autoAdvance();
-}
+// Esc or P: pause / resume
+addEventListener('keydown', (e) => {
+  if ((e.code !== 'Escape' && e.code !== 'KeyP') || !in3D()) return;
+  if (g3.state === 'play') g3.pause(); else if (g3.state === 'paused') g3.resume();
+});
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { if (in3D()) g3.pause(); else pause(); audioSuspend(); }
+  if (document.hidden) { if (in3D()) g3.pause(); audioSuspend(); }
   else if (gestured) audioWake('visible');
 });
-
-// ---------------------------------------------------------------- touch-button coverage check
-// Counts frames where an on-screen thumb button overlaps the hero or an obstacle (the tests read it).
-let ctlRects = null;
-addEventListener('resize', () => { ctlRects = null; });
-function coverageCheck() {
-  const ctl = document.getElementById('controls');
-  if (ctl.classList.contains('hidden') || getComputedStyle(ctl).display === 'none') return;
-  if (!ctlRects) ctlRects = [...ctl.querySelectorAll('.cbtn.duck, .cbtn.act, .cbtn.jump, .pad-move')].map((e) => e.getBoundingClientRect()).filter((r) => r.width);
-  const V = world.view, cx = camera.position.x, cy = camera.position.y, W = innerWidth, H = innerHeight;
-  const toR = (x0, x1, y0, y1) => ({ left: (x0 - (cx - V.w / 2)) / V.w * W, right: (x1 - (cx - V.w / 2)) / V.w * W, top: (cy + V.h / 2 - y1) / V.h * H, bottom: (cy + V.h / 2 - y0) / V.h * H });
-  const onScreen = (a) => a.right > 0 && a.left < W && a.bottom > 0 && a.top < H;
-  const hit = (a) => ctlRects.some((r) => a.left < r.right && a.right > r.left && a.top < r.bottom && a.bottom > r.top);
-  const st = game.stats, h = world.hero;
-  st.coverChecks++;
-  if (hit(toR(h.x - 0.45, h.x + 0.45, h.y, h.y + 2.0))) st.heroCovered++;
-  const obs = [];
-  for (const t of world.toks) if (t.active) obs.push(['toktok', t.x - 1.3, t.x + 1.3, 0, 1.95]);
-  for (const b of world.balls) obs.push(['ball', b.x - 0.21, b.x + 0.21, b.y - 0.21, b.y + 0.21]);
-  if (world.goat.state === 'block') obs.push(['goat', 215.4, 216.6, 0, 1.05]);
-  for (const L of world.laundry) obs.push(['laundry', L.x0, L.x1, L.y0, L.y1]);
-  for (const p of world.puddles) obs.push(['puddle', p.x0, p.x1, 0, 0.1]);
-  for (const s of world.solids) if (s.y1 - Math.max(s.y0, -0.5) < 3.2 && s.y1 - s.y0 < 3.2) obs.push(['prop', s.x0, s.x1, s.y0, s.y1]);
-  for (const p of world.pickups) if (!p.collected) obs.push(['mango', p.x - 0.2, p.x + 0.2, p.y - 0.2, p.y + 0.2]);
-  for (const [n, x0, x1, y0, y1] of obs) {
-    const r = toR(x0, x1, y0, y1);
-    if (!onScreen(r) || !hit(r)) continue;
-    // all on-screen overlaps are counted; "relevant" = still ahead of the hero and at his level (can hit him)
-    st.obstacleCovered++; st.coveredWhat[n] = (st.coveredWhat[n] || 0) + 1;
-    if (x1 > h.x - 0.5 && y1 > h.y - 1.5) { st.relevantCovered = (st.relevantCovered || 0) + 1; (st.relevantWhat = st.relevantWhat || []).push([n, Math.round(x0), Math.round(h.x)]); }
-  }
-}
-let frameNo = 0;
-
-// ---------------------------------------------------------------- main loop: fixed 60 Hz step + interpolation
-const STEP = 1 / 60;
-let acc = 0, last = performance.now(), fpsAcc = 0, fpsN = 0, slowStreak = 0, fastStreak = 0, cpuAcc = 0, cpuN = 0;
-const fpsEl = document.getElementById('fps');
-if (SHOW_FPS) fpsEl.classList.remove('hidden');
-function frame(now) {
-  requestAnimationFrame(frame);
-  let dt = (now - last) / 1000; last = now;
-  if (dt > 0.25) dt = 0.25;
-  if (!world || in3D()) return;
-  const c0 = performance.now();
-  if (state === 'play') {
-    acc += dt;
-    let n = 0;
-    while (acc >= STEP && n < 8) { pollInput(); world.step(STEP); acc -= STEP; n++; }
-    if (n === 8) acc = 0;
-    if (state === 'play' && game.lastSeg !== world.segment) { game.lastSeg = world.segment; game.stats.segTimes[world.segment] = +world.elapsed.toFixed(1); glog('segment', world.segment, { t: +world.elapsed.toFixed(1), mangoes: world.mangoes, hearts: world.hearts }); }
-  } else acc = 0;
-  if (state === 'play' || state === 'paused' || state === 'fail' || state === 'finale' || state === 'intro') {
-    world.render(state === 'play' ? acc / STEP : 1, state === 'play' ? dt : 0);
-    renderer.render(scene, camera);
-    if (state === 'play') { cpuAcc += performance.now() - c0; cpuN++; if (isTouch && (frameNo++ % 4 === 0)) coverageCheck(); }
-  } else if (state === 'title' || state === 'end') {
-    // idle background: keep the GPU cool
-  }
-  // fps + dynamic resolution
-  fpsAcc += dt; fpsN++;
-  if (fpsAcc >= 1) {
-    const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0;
-    if (state === 'play') {
-      game.stats.fpsSamples.push(Math.round(fps));
-      if (cpuN) { (game.stats.cpuMs = game.stats.cpuMs || []).push(+(cpuAcc / cpuN).toFixed(2)); cpuAcc = 0; cpuN = 0; }
-      game.stats.drawCalls = renderer.info.render.calls; game.stats.triangles = renderer.info.render.triangles;
-      if (fps < 50) { slowStreak++; fastStreak = 0; } else if (fps > 58) { fastStreak++; slowStreak = 0; }
-      if (slowStreak >= 2 && dprScale > 0.6) { dprScale = Math.max(0.6, dprScale - 0.15); slowStreak = 0; resize(); }
-      if (fastStreak >= 6 && dprScale < 1) { dprScale = Math.min(1, dprScale + 0.1); fastStreak = 0; resize(); }
-    }
-    if (SHOW_FPS) fpsEl.textContent = `${Math.round(fps)} fps · dpr ${renderer.getPixelRatio().toFixed(2)} · x ${world.hero.x.toFixed(0)}`;
-  }
-}
-requestAnimationFrame(frame);

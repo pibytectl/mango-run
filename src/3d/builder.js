@@ -92,7 +92,7 @@ export class Builder {
       if (m.userData.atlas) g.setAttribute('atl', new THREE.Float32BufferAttribute(b.atl, 4));
       g.computeBoundingSphere();
       const mesh = new THREE.Mesh(g, m);
-      mesh.castShadow = !m.userData.noCast; mesh.receiveShadow = true;
+      mesh.castShadow = !m.userData.noCast; mesh.receiveShadow = !m.userData.noReceive;
       mesh.matrixAutoUpdate = false; mesh.updateMatrix();
       mesh.userData.chunk = true;
       parent.add(mesh); meshes.push(mesh);
@@ -105,8 +105,10 @@ export class Builder {
 // A Lambert material whose map is an atlas: each vertex carries its tile (u0, v0, su, sv); the UV is wrapped
 // inside the tile (fract), or clamped when su < 0 (signs), with explicit gradients so mip selection does not
 // jump at the wrap seam. A small inset keeps neighbouring tiles from bleeding in at low mips.
+// Round 3: vertex colours on (a per-building tint, painted ground floors), so the same facade tile no longer
+// repeats identically down the street.
 export function atlasMaterial(map) {
-  const m = new THREE.MeshLambertMaterial({ map });
+  const m = new THREE.MeshLambertMaterial({ map, vertexColors: true });
   m.userData.atlas = true;
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = 'attribute vec4 atl;\nvarying vec4 vAtl;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n  vAtl = atl;');

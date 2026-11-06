@@ -476,7 +476,7 @@ export class Hero {
       return 'down';
     }
     this.setState('hit'); this.anim.play('hit_react', { fade: 0.04, restart: true });
-    b.vel.x = -dx / d * 4; b.vel.z = -dz / d * 4; this.iframes = 0.85;
+    b.vel.x = -dx / d * 4; b.vel.z = -dz / d * 4; this.iframes = 0.6;   // round 3: 0.85 -> 0.6 s
     this.yaw = Math.atan2(dx, dz);
     return 'hit';
   }

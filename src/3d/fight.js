@@ -4,7 +4,12 @@
 // Round 2 easing (a normal player went from 6 to 1 health in 19 s): a longer telegraph (longer still when the
 // thug is off screen, who also gets an edge warning), a pause between attackers, light hits can still cancel
 // the first half of a wind-up, longer cooldowns.
-const WINDUP = 0.75, WINDUP_OFFSCREEN = 1.15, TOKEN_GAP = 0.8;
+// Round 3 (Andy: "too easy"): real pressure back, the off-screen warning kept. The telegraph is shorter on
+// screen (0.75 -> 0.6 s; off screen 1.15 -> 1.0 s with the edge arrow), the next thug may start his wind-up
+// while the first is still punching, the waiting thugs circle round to his back, cooldowns are shorter, a
+// light hit only cancels the first 30% of a wind-up, and they take more hits. (After the first bot run, where
+// the fight was the one place it died, eased a notch: a longer gap between attackers, slower circling, 12/9/9 hits.)
+const WINDUP = 0.6, WINDUP_OFFSCREEN = 1.0, TOKEN_GAP = 0.55;
 const _v = new THREE.Vector3();
 import * as THREE from '../../vendor/three.module.min.js';
 
@@ -52,7 +57,7 @@ export class Fight {
     f.hp -= atk.dmg; f.hitsTaken++;
     const b = f.npc.body;
     // committed to a punch: light hits do not stop it (block or dodge instead); the finisher does
-    if (((f.state === 'windup' && f.t > f.windup * 0.5) || f.state === 'punch') && !atk.finisher && f.hp > 0) { g.onFight('armor', f); return; }
+    if (((f.state === 'windup' && f.t > f.windup * 0.3) || f.state === 'punch') && !atk.finisher && f.hp > 0) { g.onFight('armor', f); return; }
     if (this.token === f) { this.token = null; this.gap = TOKEN_GAP * 0.6; }
     f.glow.material.opacity = 0;
     // too many hits in a row: he hops back out of the combo
@@ -100,12 +105,17 @@ export class Fight {
       switch (f.state) {
         case 'approach': case 'circle': {
           faceHero();
-          const ring = this.token === f ? 1.25 : 2.9 + (this.list.indexOf(f) % 2) * 0.6;
+          const ring = this.token === f ? 1.25 : 2.3 + (this.list.indexOf(f) % 2) * 0.5;
           const radial = (d - ring);
           const sp = Math.abs(radial) > 0.4 ? Math.min(3.6, Math.abs(radial) * 2.5) * Math.sign(radial) : 0;
           vx = dx / d * sp; vz = dz / d * sp;
           // strafe around the hero while waiting
-          if (this.token !== f) { const s = 1.1 * f.circleDir; vx += -dz / d * s; vz += dx / d * s; if (Math.random() < dt * 0.3) f.circleDir *= -1; }
+          if (this.token !== f) {
+            // circle toward his back: pick the way round that increases the angle from where he faces
+            const hy = hero.yaw, fx = Math.sin(hy), fz = Math.cos(hy), side = (-dx) * fz - (-dz) * fx;
+            if (Math.random() < dt * 1.5) f.circleDir = side >= 0 ? 1 : -1;
+            const s = 1.25 * f.circleDir; vx += -dz / d * s; vz += dx / d * s;
+          }
           f.cool -= dt;
           if (!this.token && this.gap <= 0 && f.cool <= 0 && hero.state !== 'down' && hero.state !== 'getup' && d < 4.5) { this.token = f; }
           if (this.token === f && d < 1.7) { f.state = 'windup'; f.t = 0; f.windup = this.onScreen(f) ? WINDUP : WINDUP_OFFSCREEN; n.anim.play('punch', { fade: 0.1, speed: 0.0001, at: 0.12 }); g.onFight('telegraph', f); }
@@ -115,7 +125,11 @@ export class Fight {
         case 'windup': {
           faceHero();
           f.glow.material.opacity = 0.35 + 0.45 * Math.abs(Math.sin(f.t * 18));
-          if (f.t > f.windup) { f.state = 'punch'; f.t = 0; f.p1 = f.p2 = false; n.anim.play('punch', { fade: 0.03, speed: 1.0, restart: true }); f.glow.material.opacity = 0; }
+          if (f.t > f.windup) {
+            f.state = 'punch'; f.t = 0; f.p1 = f.p2 = false; n.anim.play('punch', { fade: 0.03, speed: 1.0, restart: true }); f.glow.material.opacity = 0;
+            // the token passes on as the punch starts: the next thug can be winding up while this one swings
+            if (this.token === f) { this.token = null; this.gap = TOKEN_GAP; }
+          }
           break;
         }
         case 'punch': {
@@ -124,12 +138,12 @@ export class Fight {
           vx = Math.sin(n.yaw) * lunge; vz = Math.cos(n.yaw) * lunge;
           if (!f.p1 && f.t >= 0.27) { f.p1 = true; this.punchCheck(f); }
           if (!f.p2 && f.t >= 0.5) { f.p2 = true; this.punchCheck(f); }
-          if (f.t > 0.93) { f.state = 'circle'; f.t = 0; f.cool = 1.4 + Math.random() * 1.0; if (this.token === f) { this.token = null; this.gap = TOKEN_GAP; } }
+          if (f.t > 0.93) { f.state = 'circle'; f.t = 0; f.cool = 0.8 + Math.random() * 0.7; if (this.token === f) { this.token = null; this.gap = TOKEN_GAP; } }
           break;
         }
         case 'hit': {
           b.vel.x *= Math.max(0, 1 - 8 * dt); b.vel.z *= Math.max(0, 1 - 8 * dt); vx = b.vel.x; vz = b.vel.z;
-          if (f.t > 0.5) { f.state = 'circle'; f.t = 0; f.cool = Math.min(f.cool, 0.5); }
+          if (f.t > 0.45) { f.state = 'circle'; f.t = 0; f.cool = Math.min(f.cool, 0.35); }
           break;
         }
         case 'down': {
@@ -137,7 +151,7 @@ export class Fight {
           if (!f.ko && f.t > 1.4) { f.state = 'getup'; f.t = 0; n.anim.play('get_up', { fade: 0.08, speed: 1.15 }); }
           break;
         }
-        case 'getup': if (f.t > 1.15) { f.state = 'circle'; f.t = 0; f.cool = 0.7; } break;
+        case 'getup': if (f.t > 1.15) { f.state = 'circle'; f.t = 0; f.cool = 0.4; } break;
         case 'evade': {
           b.vel.x *= Math.max(0, 1 - 5 * dt); b.vel.z *= Math.max(0, 1 - 5 * dt); vx = b.vel.x; vz = b.vel.z; faceHero();
           if (f.t > 0.45) { f.state = 'circle'; f.t = 0; f.cool = 0.25; }

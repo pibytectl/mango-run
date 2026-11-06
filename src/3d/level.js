@@ -6,6 +6,7 @@ import * as THREE from '../../vendor/three.module.min.js';
 import { mergeGeometries } from '../../vendor/addons/BufferGeometryUtils.js';
 import { Builder, rng, atlasMaterial } from './builder.js';
 import { A } from './assets3d.js';
+import { donkeyCart, CART_FOOT } from './hazards.js';
 
 const FLOOR0 = 3.4, FLOOR = 3.2, TILE = 6.4, SHOP_W = 5.1;
 // Round 2 (pacing): the microbus stand moved 86 m down the street, so the run to the market (and the theft)
@@ -29,7 +30,10 @@ export function makeMaterials() {
     kgoods: L({ map: T.kiosk_goods }), katlas: L({ map: kioskAtlas(T.fridge.image) }), prices: L({ map: priceCards(), side: THREE.DoubleSide }),
     paint: L({ vertexColors: true }),
     laundry: L({ map: T.laundry, alphaTest: 0.45, side: THREE.DoubleSide }),
+    // round 3: grime and water streaks (four variants in one canvas), drawn just off the wall
+    grime: L({ map: grimeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
   };
+  m.grime.userData.noCast = true;
   m.laundry.userData.noCast = true;
   T.laundry.wrapS = THREE.RepeatWrapping;
   T.produce.wrapS = THREE.RepeatWrapping;
@@ -45,6 +49,17 @@ const ATLAS = {
 const VIRT = Object.fromEntries(Object.entries(ATLAS).map(([k, [mat, x, y, w, h, clamp]]) => [k, { mat, tile: [x / 2048, 1 - (y + h) / 2048, (clamp ? -w : w) / 2048, h / 2048] }]));
 const SILHOUETTE = new THREE.MeshBasicMaterial({ color: 0x5a3a3c, fog: false });
 const FACADES = ['f_brick_a', 'f_brick_b', 'f_brick_c', 'f_brick_a', 'f_ochre', 'f_pale'];
+// round 3: painted ground floors (a multiply on the shopfront texture): teal, yellow, pink, sky blue
+const PAINTED = [[0.5, 0.98, 0.92], [1.18, 1.02, 0.5], [1.18, 0.74, 0.84], [0.66, 0.86, 1.18]];
+// a tint per building so the same facade tile never repeats exactly: brick a little warmer or greyer, darker
+// or sun-bleached; plaster in the faded Cairo colours (rose, mint, sky, sand)
+function facadeTint(fac, R) {
+  if (fac === 'f_pale' || fac === 'f_ochre') {
+    const P = [[1.06, 0.93, 0.86], [0.9, 1.02, 0.92], [0.9, 0.95, 1.06], [1.05, 0.98, 0.82], [1, 1, 1], [0.84, 0.82, 0.8]];
+    const p = P[Math.floor(R() * P.length)], k = 0.9 + R() * 0.16; return p.map((v) => v * k);
+  }
+  const k = 0.84 + R() * 0.26; return [k * (0.97 + R() * 0.08), k * (0.95 + R() * 0.07), k * (0.93 + R() * 0.08)];
+}
 const C = {
   plaster: [0.86, 0.74, 0.58], plasterDark: [0.62, 0.5, 0.38], concrete: [0.66, 0.64, 0.6], wood: [0.5, 0.33, 0.2], woodDark: [0.33, 0.21, 0.13],
   iron: [0.16, 0.15, 0.15], tank: [0.12, 0.13, 0.16], tankBlue: [0.2, 0.32, 0.55], ac: [0.86, 0.86, 0.82], sand: [0.8, 0.68, 0.48],
@@ -104,35 +119,68 @@ export class Level {
     const f = { front: [P(-hw, hd), P(hw, hd), [s, c]], back: [P(hw, -hd), P(-hw, -hd), [-s, -c]], right: [P(hw, hd), P(hw, -hd), [c, -s]], left: [P(-hw, -hd), P(-hw, hd), [-c, s]] }[face];
     return { a: f[0], b: f[1], n: f[2], len: Math.hypot(f[1][0] - f[0][0], f[1][1] - f[0][1]) };
   }
-  shopSign(cx, cz, yaw, w, d, face) {
+  // round 3: signs hang crooked (tilted in the wall plane, some leaning out at the top) and a few blade signs
+  // stick out from the wall on an iron bracket
+  shopSign(cx, cz, yaw, w, d, face, rich) {
     const R = this.R, F = this.faceFrame(cx, cz, yaw, w, d, face);
     const sw = Math.min(6.2, F.len * (0.55 + R() * 0.3)), t0 = 0.5 - sw / F.len / 2 + (R() - 0.5) * (1 - sw / F.len) * 0.8, t1 = t0 + sw / F.len;
     const y0 = 2.72 + R() * 0.08, y1 = y0 + 0.56, off = 0.17 + 0.03;
-    const pt = (t, y) => [F.a[0] + (F.b[0] - F.a[0]) * t + F.n[0] * off, y, F.a[1] + (F.b[1] - F.a[1]) * t + F.n[1] * off];
+    const tilt = rich ? (R() - 0.5) * (R() < 0.3 ? 0.16 : 0.06) : 0, lean = rich && R() < 0.3 ? 0.06 + R() * 0.16 : 0;
+    const ac = (t0 + t1) / 2 * F.len, yc = (y0 + y1) / 2;
+    // a corner of the board: along the wall (metres from a), height, how far out; rotated by `tilt` in the wall plane
+    const pt = (t, y, o = off) => {
+      const al = t * F.len - ac, yy = y - yc, ca = Math.cos(tilt), sa = Math.sin(tilt);
+      const A = ac + al * ca - yy * sa, Y = yc + al * sa + yy * ca, out = o + (Y > yc ? lean * (Y - yc) / 0.3 : 0);
+      return [F.a[0] + (F.b[0] - F.a[0]) * A / F.len + F.n[0] * out, Y, F.a[1] + (F.b[1] - F.a[1]) * A / F.len + F.n[1] * out];
+    };
     const k = Math.floor(R() * SIGN_N), u0 = (k % 2) / 2, v1 = 1 - Math.floor(k / 2) / 8, v0 = v1 - 1 / 8;
     this.B.quad('signs', [pt(t0, y0), pt(t1, y0), pt(t1, y1), pt(t0, y1)], [[u0, v0], [u0 + 0.5, v0], [u0 + 0.5, v1], [u0, v1]]);
     // the board's edge, so it reads as a sign and not a decal
-    const e = (t, y) => [F.a[0] + (F.b[0] - F.a[0]) * t + F.n[0] * 0.02, y, F.a[1] + (F.b[1] - F.a[1]) * t + F.n[1] * 0.02];
+    const e = (t, y) => pt(t, y, 0.02);
     this.B.quad('paint', [e(t0, y0 - 0.03), pt(t0, y0 - 0.03), pt(t0, y1 + 0.03), e(t0, y1 + 0.03)], [[0, 0], [1, 0], [1, 1], [0, 1]], C.iron);
     this.B.quad('paint', [pt(t1, y0 - 0.03), e(t1, y0 - 0.03), e(t1, y1 + 0.03), pt(t1, y1 + 0.03)], [[0, 0], [1, 0], [1, 1], [0, 1]], C.iron);
+    if (rich && R() < 0.22) {
+      // blade sign: a board standing out from the wall above the slab, lettering on both faces
+      const tb = R() < 0.5 ? 0.12 : 0.88, by = 3.9 + R() * 0.7, bl = 0.95, bh = 0.42;
+      const base = [F.a[0] + (F.b[0] - F.a[0]) * tb, F.a[1] + (F.b[1] - F.a[1]) * tb], q = (o, y) => [base[0] + F.n[0] * o, y, base[1] + F.n[1] * o];
+      const kb = Math.floor(R() * SIGN_N), bu = (kb % 2) / 2, bv1 = 1 - Math.floor(kb / 2) / 8, bv0 = bv1 - 1 / 8;
+      const ux = (F.b[0] - F.a[0]) / F.len * 0.015, uz = (F.b[1] - F.a[1]) / F.len * 0.015, sh = (p, k2) => [p[0] + ux * k2, p[1], p[2] + uz * k2];
+      this.B.quad('signs', [sh(q(0.25, by), -1), sh(q(0.25 + bl, by), -1), sh(q(0.25 + bl, by + bh), -1), sh(q(0.25, by + bh), -1)], [[bu, bv0], [bu + 0.5, bv0], [bu + 0.5, bv1], [bu, bv1]]);
+      this.B.quad('signs', [sh(q(0.25 + bl, by), 1), sh(q(0.25, by), 1), sh(q(0.25, by + bh), 1), sh(q(0.25 + bl, by + bh), 1)], [[bu, bv0], [bu + 0.5, bv0], [bu + 0.5, bv1], [bu, bv1]]);
+      this.B.beam('paint', q(0, by + bh + 0.08), q(0.25 + bl + 0.05, by + bh + 0.08), 0.035, C.iron);
+      this.B.beam('paint', q(0, by + 0.02), q(0.3, by + bh + 0.06), 0.03, C.iron);
+    }
   }
-  balcony(cx, cz, yaw, w, d, face, along, y) {
+  balcony(cx, cz, yaw, w, d, face, along, y, o = {}) {
     const R = this.R, F = this.faceFrame(cx, cz, yaw, w, d, face);
-    const t = 0.5 + along / F.len, hw = 1.15 / F.len, dp = 0.85;
+    const bw = o.bw || 2.3, hb = bw / 2 - 0.03, dp = o.dp || 0.85, FLh = o.fl || FLOOR;
+    const t = 0.5 + along / F.len;
     const ux = (F.b[0] - F.a[0]) / F.len, uz = (F.b[1] - F.a[1]) / F.len, nx = F.n[0], nz = F.n[1];
     const mx = F.a[0] + (F.b[0] - F.a[0]) * t, mz = F.a[1] + (F.b[1] - F.a[1]) * t;
     const yawF = Math.atan2(nx, nz);
-    this.B.obox(mx + nx * dp / 2, mz + nz * dp / 2, yawF, 2.3, dp, y + FLOOR, y + FLOOR + 0.13, { all: { mat: 'paint', color: C.concrete }, bottom: { mat: 'paint', color: C.plasterDark } });
-    const top = y + FLOOR + 1.05, base = y + FLOOR + 0.13, rail = (ax, az, bx, bz) => this.B.beam('paint', [ax, top, az], [bx, top, bz], 0.05, C.iron);
-    const c0 = [mx - ux * 1.12 + nx * (dp - 0.05), mz - uz * 1.12 + nz * (dp - 0.05)], c1 = [mx + ux * 1.12 + nx * (dp - 0.05), mz + uz * 1.12 + nz * (dp - 0.05)];
-    rail(c0[0], c0[1], c1[0], c1[1]);
-    rail(c0[0], c0[1], c0[0] - nx * (dp - 0.1), c0[1] - nz * (dp - 0.1)); rail(c1[0], c1[1], c1[0] - nx * (dp - 0.1), c1[1] - nz * (dp - 0.1));
-    for (let i = 0; i <= 8; i++) { const k = i / 8; this.B.beam('paint', [c0[0] + (c1[0] - c0[0]) * k, base, c0[1] + (c1[1] - c0[1]) * k], [c0[0] + (c1[0] - c0[0]) * k, top, c0[1] + (c1[1] - c0[1]) * k], 0.03, C.iron); }
-    // washing over the rail
-    if (R() < 0.6) {
-      const o = Math.floor(R() * 3) * 0.33, p = (k, yy) => [c0[0] + (c1[0] - c0[0]) * k + nx * 0.03, yy, c0[1] + (c1[1] - c0[1]) * k + nz * 0.03];
-      this.B.quad('laundry', [p(0.08, top - 0.85), p(0.92, top - 0.85), p(0.92, top + 0.02), p(0.08, top + 0.02)], [[o, 0], [o + 0.6, 0], [o + 0.6, 0.75], [o, 0.75]]);
+    this.B.obox(mx + nx * dp / 2, mz + nz * dp / 2, yawF, bw, dp, y + FLh, y + FLh + 0.13, { all: { mat: 'paint', color: C.concrete }, bottom: { mat: 'paint', color: C.plasterDark } });
+    const top = y + FLh + 1.05, base = y + FLh + 0.13;
+    const c0 = [mx - ux * hb + nx * (dp - 0.05), mz - uz * hb + nz * (dp - 0.05)], c1 = [mx + ux * hb + nx * (dp - 0.05), mz + uz * hb + nz * (dp - 0.05)];
+    if (o.closed) {
+      // closed in: a low plastered wall all round (a different colour from the building), sometimes a shutter
+      const col = [[0.86, 0.8, 0.68], [0.72, 0.78, 0.74], [0.8, 0.7, 0.66], [0.9, 0.88, 0.82]][Math.floor(R() * 4)];
+      this.B.obox((c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2, yawF, bw, 0.1, base, top, { all: { mat: 'paint', color: col }, bottom: null });
+      for (const cc of [c0, c1]) this.B.obox(cc[0] - nx * (dp - 0.1) / 2, cc[1] - nz * (dp - 0.1) / 2, yawF, 0.1, dp - 0.1, base, top, { all: { mat: 'paint', color: col }, bottom: null });
+      if (R() < 0.5) this.B.obox((c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2, yawF, bw * 0.8, 0.06, top, top + 1.2, { all: { mat: 'shut', uv: () => [[0, 0], [0.6, 0], [0.6, 1], [0, 1]] }, bottom: null });
+    } else {
+      const rail = (ax, az, bx, bz) => this.B.beam('paint', [ax, top, az], [bx, top, bz], 0.05, C.iron);
+      rail(c0[0], c0[1], c1[0], c1[1]);
+      rail(c0[0], c0[1], c0[0] - nx * (dp - 0.1), c0[1] - nz * (dp - 0.1)); rail(c1[0], c1[1], c1[0] - nx * (dp - 0.1), c1[1] - nz * (dp - 0.1));
+      const nb = Math.max(4, Math.round(bw * 3.5));
+      for (let i = 0; i <= nb; i++) { const k = i / nb; this.B.beam('paint', [c0[0] + (c1[0] - c0[0]) * k, base, c0[1] + (c1[1] - c0[1]) * k], [c0[0] + (c1[0] - c0[0]) * k, top, c0[1] + (c1[1] - c0[1]) * k], 0.03, C.iron); }
+      // washing over the rail
+      if (R() < 0.6) {
+        const u = Math.floor(R() * 3) * 0.33, p = (k, yy) => [c0[0] + (c1[0] - c0[0]) * k + nx * 0.03, yy, c0[1] + (c1[1] - c0[1]) * k + nz * 0.03];
+        this.B.quad('laundry', [p(0.08, top - 0.85), p(0.92, top - 0.85), p(0.92, top + 0.02), p(0.08, top + 0.02)], [[u, 0], [u + 0.6 * bw / 2.3, 0], [u + 0.6 * bw / 2.3, 0.75], [u, 0.75]]);
+      }
     }
+    // a damp streak down the wall under the slab
+    if (o.fl && R() < 0.6) this.streakAt(cx, cz, yaw, w, d, face, along + (R() - 0.5) * bw * 0.6, y + FLh - 0.02, 0.8 + R() * 1.4, 0.4 + R() * 0.6);
   }
   // rooftop clutter on top of the instanced tanks and dishes: unfinished column stubs with rebar (very
   // Imbaba), a roof room, a TV antenna, a leaning ladder, and sometimes a pigeon tower
@@ -245,44 +293,77 @@ export class Level {
     this.spawns.kiosk = new THREE.Vector3(fx, 0, cz);
   }
   // A building block. Faces listed in `shop` get shopfronts on the ground floor.
+  // Round 3 (Mzee: "still very organised boxes on top of boxes"): every "rich" building (the ones the route
+  // passes) gets its own storey height, facade tile width and tint; some have the upper floors cantilevered
+  // over the street, an unfinished top storey (bare columns, rebar, a half-built brick wall), a painted ground
+  // floor; balconies, AC units and dishes sit at uneven places on the street face, every roof has tanks and
+  // junk, and grime and water streaks run down the walls. All of it merges into the existing chunk meshes
+  // (the streaks are one more material).
   building(cx, cz, w, d, floors, opts = {}) {
     const R = this.R, B = this.B;
-    const yaw = opts.yaw || 0;
-    const H = opts.h ?? (FLOOR0 + floors * FLOOR);
+    const yaw = opts.yaw || 0, c = Math.cos(yaw), s = Math.sin(yaw);
+    const rich = !opts.h && !opts.far && !opts.plain && opts.roofProps !== false && floors >= 1;
+    const fk = rich ? 0.93 + R() * 0.15 : 1, FL = FLOOR * fk;
+    const H = opts.h ?? (FLOOR0 + floors * FL);
     const fac = opts.facade || FACADES[Math.floor(R() * FACADES.length)];
-    const off = Math.floor(R() * 4) * 0.5;
+    const tw = rich ? TILE * (0.88 + R() * 0.3) : TILE, th = TILE * fk;
+    const off = rich ? R() : Math.floor(R() * 4) * 0.5;
+    const tint = rich ? facadeTint(fac, R) : null;
     const shop = opts.shop || [];
     const shopMat = opts.shopMat || (R() < 0.3 ? 'shut' : 'shop');
-    const facadeUV = (o) => (name, len, y0, y1) => [[o, (y0 - FLOOR0) / TILE], [o + len / TILE, (y0 - FLOOR0) / TILE], [o + len / TILE, (y1 - FLOOR0) / TILE], [o, (y1 - FLOOR0) / TILE]];
-    const faces = { all: { mat: fac, uv: facadeUV(off) }, top: { mat: 'roof', scale: 5 }, bottom: null };
+    const street = opts.acFace || shop[0] || null;
+    const facadeUV = (o) => (name, len, y0, y1) => [[o, (y0 - FLOOR0) / th], [o + len / tw, (y0 - FLOOR0) / th], [o + len / tw, (y1 - FLOOR0) / th], [o, (y1 - FLOOR0) / th]];
+    const faces = { all: { mat: fac, uv: facadeUV(off), color: tint }, top: { mat: 'roof', scale: 5 }, bottom: null };
     if (opts.plain) faces.all = { mat: 'paint', color: opts.plain };
+    // the upper floors may hang out over the street (0.45-0.9 m); everything above the ground floor uses U
+    const ov = rich && street && floors >= 2 && R() < 0.4 ? 0.45 + R() * 0.45 : 0;
+    const N = { right: [1, 0], left: [-1, 0], front: [0, 1], back: [0, -1] }[street] || [0, 0];
+    const U = { x: cx + (N[0] * c + N[1] * s) * ov / 2, z: cz + (-N[0] * s + N[1] * c) * ov / 2, w: w + Math.abs(N[0]) * ov, d: d + Math.abs(N[1]) * ov };
+    // an unfinished top storey: the solid block stops one storey short
+    const unfinished = rich && floors >= 2 && R() < 0.36;
+    const Hs = unfinished ? H - FL : H;
+    const painted = rich && shop.length && R() < 0.2 ? PAINTED[Math.floor(R() * PAINTED.length)] : null;
     if (H <= FLOOR0 + 0.01 || opts.noShop) {
-      B.obox(cx, cz, yaw, w, d, 0, H, faces);
+      B.obox(cx, cz, yaw, w, d, 0, Hs, faces);
     } else {
       // ground floor
-      const g = { bottom: null, top: null, all: { mat: fac, uv: facadeUV(off) } };
-      for (const f of shop) g[f] = { mat: shopMat, uv: (n, len, y0, y1) => { const o = R(); return [[o, 0], [o + len / SHOP_W, 0], [o + len / SHOP_W, 1], [o, 1]]; } };
+      const g = { bottom: null, top: null, all: { mat: fac, uv: facadeUV(off), color: painted || tint } };
+      for (const f of shop) g[f] = { mat: shopMat, uv: (n, len, y0, y1) => { const o = R(); return [[o, 0], [o + len / SHOP_W, 0], [o + len / SHOP_W, 1], [o, 1]]; }, color: painted };
       B.obox(cx, cz, yaw, w, d, 0, FLOOR0, g);
-      B.obox(cx, cz, yaw, w, d, FLOOR0, H, { ...faces, bottom: null });
+      B.obox(U.x, U.z, yaw, U.w, U.d, FLOOR0, Hs, { ...faces, bottom: ov ? { mat: 'paint', color: C.plasterDark } : null });
       // slab lip over the shops
-      if (shop.length) B.obox(cx, cz, yaw, w + 0.3, d + 0.3, FLOOR0 - 0.05, FLOOR0 + 0.25, { all: { mat: 'paint', color: C.concrete }, bottom: { mat: 'paint', color: C.plasterDark } });
+      if (shop.length) B.obox(cx, cz, yaw, w + 0.3, d + 0.3, FLOOR0 - 0.05, FLOOR0 + 0.25, { all: { mat: 'paint', color: painted ? painted.map((v) => Math.min(1, v * 0.62)) : C.concrete }, bottom: { mat: 'paint', color: C.plasterDark } });
       // painted shop signs in Arabic over the openings (invented names, drawn in the game font)
-      if (shopMat === 'shop' || R() < 0.5) for (const f of shop) this.shopSign(cx, cz, yaw, w, d, f);
+      if (shopMat === 'shop' || R() < 0.5) for (const f of shop) this.shopSign(cx, cz, yaw, w, d, f, rich);
     }
-    // a few real balconies (slab + iron rail, some with washing) on the plain facades
-    if (opts.acFace && !opts.plain && H > 7 && (fac === 'f_brick_a' || fac === 'f_brick_c' || fac === 'f_pale')) {
+    if (unfinished) this.unfinishedStorey(U.x, U.z, yaw, U.w, U.d, Hs, H, street);
+    if (rich && street) {
+      // balconies at uneven places and sizes, some closed in; under each, a water streak
+      const along = street === 'front' || street === 'back' ? U.w : U.d;
+      for (let fl = 1; fl < floors - (unfinished ? 1 : 0); fl++) if (R() < 0.42) {
+        const bw = 1.5 + R() * 1.6, a2 = (R() - 0.5) * Math.max(0, along - bw - 0.8);
+        this.balcony(U.x, U.z, yaw, U.w, U.d, street, a2, FLOOR0 + (fl - 1) * FL + 0.02 + (R() - 0.5) * 0.12, { bw, dp: 0.55 + R() * 0.55, closed: R() < 0.35, fl: FL });
+      }
+      this.streaks(U.x, U.z, yaw, U.w, U.d, street, Hs, 2 + Math.floor(R() * 3));
+      // satellite dishes on brackets on the wall
+      if (R() < 0.35) for (let i = 0, n = 1 + Math.floor(R() * 2); i < n; i++) {
+        const F = this.faceFrame(U.x, U.z, yaw, U.w, U.d, street), t = 0.1 + R() * 0.8, y = FLOOR0 + 1 + R() * Math.max(0.5, Hs - FLOOR0 - 2);
+        this.dishes.push([F.a[0] + (F.b[0] - F.a[0]) * t + F.n[0] * 0.45, y, F.a[1] + (F.b[1] - F.a[1]) * t + F.n[1] * 0.45, Math.atan2(F.n[0], F.n[1]) + (R() - 0.5) * 1.2, 0.6 + R() * 0.25]);
+      }
+    } else if (opts.acFace && !opts.plain && H > 7 && (fac === 'f_brick_a' || fac === 'f_brick_c' || fac === 'f_pale')) {
       for (let fl = 1; fl < floors; fl++) if (R() < 0.3) this.balcony(cx, cz, yaw, w, d, opts.acFace, (R() - 0.5) * (Math.max(0, (opts.acFace === 'front' ? w : d) - 3.2)), FLOOR0 + (fl - 1) * FLOOR + 0.02);
     }
-    // parapet
-    if (opts.parapet !== false) {
-      const t = 0.22, ph = 0.7, c = Math.cos(yaw), s = Math.sin(yaw);
-      const pc = opts.parapetColor || C.plaster;
-      const seg = (lx, lz, ww, dd) => B.obox(cx + lx * c + lz * s, cz - lx * s + lz * c, yaw, ww, dd, H, H + ph, { all: { mat: 'paint', color: pc }, bottom: null });
+    // parapet (not on an unfinished storey: its columns stand at the edge)
+    if (opts.parapet !== false && !unfinished) {
+      const t = 0.22, ph = rich ? 0.5 + R() * 0.5 : 0.7;
+      const pc = opts.parapetColor || (rich && R() < 0.5 ? C.plasterDark : C.plaster);
+      const PX = rich ? U.x : cx, PZ = rich ? U.z : cz, PW = rich ? U.w : w, PD = rich ? U.d : d;
+      const seg = (lx, lz, ww, dd) => B.obox(PX + lx * c + lz * s, PZ - lx * s + lz * c, yaw, ww, dd, H, H + ph, { all: { mat: 'paint', color: pc }, bottom: null });
       const sides = opts.parapetSides || ['front', 'back', 'left', 'right'];
-      if (sides.includes('front')) seg(0, d / 2 - t / 2, w, t);
-      if (sides.includes('back')) seg(0, -d / 2 + t / 2, w, t);
-      if (sides.includes('left')) seg(-w / 2 + t / 2, 0, t, d - 2 * t);
-      if (sides.includes('right')) seg(w / 2 - t / 2, 0, t, d - 2 * t);
+      if (sides.includes('front')) seg(0, PD / 2 - t / 2, PW, t);
+      if (sides.includes('back')) seg(0, -PD / 2 + t / 2, PW, t);
+      if (sides.includes('left')) seg(-PW / 2 + t / 2, 0, t, PD - 2 * t);
+      if (sides.includes('right')) seg(PW / 2 - t / 2, 0, t, PD - 2 * t);
       if (yaw === 0 && opts.collideParapet) for (const sd of sides) {
         const x0 = cx - w / 2, x1 = cx + w / 2, z0 = cz - d / 2, z1 = cz + d / 2;
         if (sd === 'left') this.col(x0, H, z0, x0 + t, H + ph, z1, { vault: true });
@@ -292,33 +373,91 @@ export class Level {
       }
     }
     if (yaw === 0 && opts.collide !== false) this.col(cx - w / 2, -1, cz - d / 2, cx + w / 2, H, cz + d / 2, { building: true });
-    // roof clutter
+    // roof clutter: rich roofs always get a tank and a junk pile
     if (opts.roofProps !== false) {
-      const c = Math.cos(yaw), s = Math.sin(yaw);
-      const at = (lx, lz) => [cx + lx * c + lz * s, cz - lx * s + lz * c];
-      if (R() < 0.75) { const [x, z] = at((R() - 0.5) * (w - 2.5), (R() - 0.5) * (d - 2.5)); this.tanks.push([x, H, z, R() < 0.3 ? 1 : 0, 0.9 + R() * 0.4]); }
-      if (R() < 0.5) { const [x, z] = at((R() - 0.5) * (w - 2), (R() - 0.5) * (d - 2)); this.tanks.push([x, H, z, 0, 0.8 + R() * 0.3]); }
-      if (R() < 0.7) { const [x, z] = at((R() - 0.5) * (w - 1.5), (R() - 0.5) * (d - 1.5)); this.dishes.push([x, H, z, R() * 6.28, 0.8 + R() * 0.4]); }
-      if (R() < 0.35) { const [x, z] = at((R() - 0.5) * (w - 1.5), (R() - 0.5) * (d - 1.5)); this.dishes.push([x, H, z, R() * 6.28, 0.7 + R() * 0.3]); }
-      this.roofExtras(cx, cz, yaw, w, d, H, fac, opts.towerP || 0);
+      const RX = rich ? U.x : cx, RZ = rich ? U.z : cz, RW = rich ? U.w : w, RD = rich ? U.d : d;
+      const at = (lx, lz) => [RX + lx * c + lz * s, RZ - lx * s + lz * c];
+      if (rich || R() < 0.75) { const [x, z] = at((R() - 0.5) * (RW - 2.5), (R() - 0.5) * (RD - 2.5)); this.tanks.push([x, Hs, z, R() < 0.3 ? 1 : 0, 0.9 + R() * 0.4]); }
+      if (R() < 0.5) { const [x, z] = at((R() - 0.5) * (RW - 2), (R() - 0.5) * (RD - 2)); this.tanks.push([x, Hs, z, 0, 0.8 + R() * 0.3]); }
+      if (rich || R() < 0.7) { const [x, z] = at((R() - 0.5) * (RW - 1.5), (R() - 0.5) * (RD - 1.5)); this.dishes.push([x, Hs, z, R() * 6.28, 0.8 + R() * 0.4]); }
+      if (R() < 0.35) { const [x, z] = at((R() - 0.5) * (RW - 1.5), (R() - 0.5) * (RD - 1.5)); this.dishes.push([x, Hs, z, R() * 6.28, 0.7 + R() * 0.3]); }
+      if (rich) this.junk(RX, RZ, yaw, RW, RD, Hs);
+      this.roofExtras(RX, RZ, yaw, RW, RD, Hs, unfinished ? 'unfinished' : fac, opts.towerP || 0);
     }
-    // AC units on the street face
+    // AC units on the street face: more of them, at uneven heights, some out on brackets, a drip streak under most
     if (opts.acFace && H > 7) {
-      const n = 1 + Math.floor(R() * 3);
+      const n = rich ? 2 + Math.floor(R() * 4) : 1 + Math.floor(R() * 3);
       for (let i = 0; i < n; i++) {
-        const fl = Math.floor(R() * floors), y = FLOOR0 + fl * FLOOR + 0.6;
-        const along = (R() - 0.5) * (w - 1.4);
-        this.acs.push({ cx, cz, yaw, w, d, face: opts.acFace, along, y });
+        const fl = Math.floor(R() * Math.max(1, floors - (unfinished ? 1 : 0))), y = FLOOR0 + fl * FL + (rich ? 0.3 + R() * 1.1 : 0.6);
+        const aw = (rich ? this.faceFrame(U.x, U.z, yaw, U.w, U.d, opts.acFace) : this.faceFrame(cx, cz, yaw, w, d, opts.acFace)).len, along = (R() - 0.5) * (aw - 1.4);
+        const a = { cx: rich ? U.x : cx, cz: rich ? U.z : cz, yaw, w: rich ? U.w : w, d: rich ? U.d : d, face: opts.acFace, along, y, out: rich && R() < 0.3 ? 0.12 + R() * 0.3 : 0, tilt: rich ? (R() - 0.5) * 0.12 : 0 };
+        this.acs.push(a);
+        if (rich && R() < 0.65) this.streakAt(a.cx, a.cz, yaw, a.w, a.d, a.face, along, y - 0.3, 0.9 + R() * 1.6, 0.5);
       }
     }
     return H;
+  }
+  // bare concrete columns with rebar sticking out, a half-built brick wall on the street side, bricks on the slab
+  unfinishedStorey(cx, cz, yaw, w, d, y0, y1, street) {
+    const R = this.R, B = this.B, c = Math.cos(yaw), s = Math.sin(yaw);
+    const at = (lx, lz) => [cx + lx * c + lz * s, cz - lx * s + lz * c];
+    const pts = [];
+    const edge = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(L / (3.2 + R() * 0.8))); for (let i = 0; i <= n; i++) pts.push([x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n]); };
+    const hw = w / 2 - 0.15, hd = d / 2 - 0.15;
+    edge(-hw, -hd, -hw, hd); edge(hw, -hd, hw, hd); edge(-hw, -hd, hw, -hd); edge(-hw, hd, hw, hd);
+    const seen = new Set();
+    for (const [lx, lz] of pts) {
+      const k = lx.toFixed(1) + ',' + lz.toFixed(1); if (seen.has(k)) continue; seen.add(k);
+      const [x, z] = at(lx, lz), top = y1 - 0.15 - R() * (R() < 0.3 ? 1.6 : 0.4);
+      B.obox(x, z, yaw, 0.3, 0.3, y0, top, { all: { mat: 'paint', color: C.concrete }, bottom: null });
+      for (const [rx, rz] of [[-0.08, -0.08], [0.08, 0.08], [0.08, -0.08], [-0.08, 0.08]]) if (R() < 0.85) B.beam('paint', [x + rx, top, z + rz], [x + rx * (1.6 + R() * 2), top + 0.5 + R() * 0.7, z + rz * (1.6 + R() * 2)], 0.022, C.rust);
+    }
+    // the half-built brick wall: part of the street face, waist to head high
+    if (street) {
+      const F = this.faceFrame(cx, cz, yaw, w, d, street), t0 = R() * 0.4, t1 = t0 + 0.3 + R() * 0.5, h = 0.8 + R() * 1.8;
+      const p0 = [F.a[0] + (F.b[0] - F.a[0]) * t0 - F.n[0] * 0.12, F.a[1] + (F.b[1] - F.a[1]) * t0 - F.n[1] * 0.12], p1 = [F.a[0] + (F.b[0] - F.a[0]) * Math.min(1, t1) - F.n[0] * 0.12, F.a[1] + (F.b[1] - F.a[1]) * Math.min(1, t1) - F.n[1] * 0.12];
+      const L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+      B.obox((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, Math.atan2(F.n[0], F.n[1]), L, 0.2, y0, y0 + h, { all: { mat: 'brickwall', scale: 1.4 }, bottom: null });
+    }
+    for (let i = 0; i < 3; i++) { const [x, z] = at((R() - 0.5) * (w - 2), (R() - 0.5) * (d - 2)); B.obox(x, z, R() * 3, 0.9, 0.6, y0, y0 + 0.25 + R() * 0.35, { all: { mat: 'paint', color: C.brick }, bottom: null }); }
+  }
+  // a pile of roof junk: crates, sacks, a blue barrel, bricks, old tyres, a broken chair, all at odd angles
+  junk(cx, cz, yaw, w, d, y) {
+    const R = this.R, B = this.B, c = Math.cos(yaw), s = Math.sin(yaw);
+    const [jx, jz] = [(R() - 0.5) * Math.max(0, w - 3), (R() - 0.5) * Math.max(0, d - 3)];
+    const n = 3 + Math.floor(R() * 5);
+    for (let i = 0; i < n; i++) {
+      const lx = jx + (R() - 0.5) * 2.2, lz = jz + (R() - 0.5) * 2.2, x = cx + lx * c + lz * s, z = cz - lx * s + lz * c, ry = R() * 3.14, k = R();
+      if (k < 0.25) B.obox(x, z, ry, 0.55 + R() * 0.3, 0.45 + R() * 0.2, y, y + 0.4 + R() * 0.3, { all: { mat: 'crate', scale: 0.6 }, bottom: null });
+      else if (k < 0.42) B.obox(x, z, ry, 0.7, 0.45, y, y + 0.28, { all: { mat: 'burlap', scale: 0.6 }, bottom: null });
+      else if (k < 0.55) B.obox(x, z, ry, 0.5, 0.5, y, y + 0.85, { all: { mat: 'paint', color: [0.15, 0.32, 0.62] }, bottom: null });
+      else if (k < 0.7) B.obox(x, z, ry, 1.0, 0.5, y, y + 0.2 + R() * 0.3, { all: { mat: 'paint', color: C.brick }, bottom: null });
+      else if (k < 0.85) for (let t = 0, m = 1 + Math.floor(R() * 3); t < m; t++) B.obox(x, z, ry + t * 0.4, 0.62, 0.62, y + t * 0.2, y + t * 0.2 + 0.19, { all: { mat: 'paint', color: C.tyre }, bottom: null });
+      else { // a broken chair: seat and two legs and a back, tipped over
+        B.obox(x, z, ry, 0.45, 0.45, y + 0.05, y + 0.09, { all: { mat: 'paint', color: C.wood }, bottom: null });
+        B.beam('paint', [x, y, z], [x + 0.35, y + 0.45, z + 0.1], 0.04, C.woodDark); B.beam('paint', [x + 0.2, y, z - 0.2], [x - 0.15, y + 0.5, z - 0.1], 0.04, C.woodDark);
+      }
+    }
+  }
+  // grime and water streaks down a face: from the roof line, 1.5-3.5 m long, at random places
+  streaks(cx, cz, yaw, w, d, face, top, n) {
+    const R = this.R, F = this.faceFrame(cx, cz, yaw, w, d, face);
+    for (let i = 0; i < n; i++) this.streakAt(cx, cz, yaw, w, d, face, (R() - 0.5) * (F.len - 1.4), top - 0.02, 1.5 + R() * 2.2, 0.7 + R() * 1.3);
+  }
+  streakAt(cx, cz, yaw, w, d, face, along, yTop, len, width) {
+    const R = this.R, F = this.faceFrame(cx, cz, yaw, w, d, face);
+    const t = 0.5 + along / F.len, hw = width / F.len / 2, o = 0.025;
+    const P = (tt, y) => [F.a[0] + (F.b[0] - F.a[0]) * tt + F.n[0] * o, y, F.a[1] + (F.b[1] - F.a[1]) * tt + F.n[1] * o];
+    const u = Math.floor(R() * 4) * 0.25, y0 = Math.max(0.3, yTop - len);
+    this.B.quad('grime', [P(t - hw, y0), P(t + hw, y0), P(t + hw, yTop), P(t - hw, yTop)], [[u, 0], [u + 0.25, 0], [u + 0.25, 1], [u, 1]]);
   }
   // a row of buildings along a z range on one side of an axis-aligned street (side -1 = west/left x<, +1 = right)
   row(side, xEdge, z0, z1, opts = {}) {
     const R = this.R;
     let z = z0;
     while (z > z1 + 3) {
-      let w = opts.lot ? opts.lot : 7 + Math.floor(R() * 6);
+      // round 3: no repeating rhythm (lots were 7-12 m in whole metres): slivers of 3.8-6 m, wide ones up to 12.5
+      let w = opts.lot ? opts.lot : (R() < 0.16 ? 3.8 + R() * 2.2 : 6 + R() * 6.5);
       if (z - w < z1) w = z - z1;
       if (opts.gaps && opts.gaps.some(([g0, g1]) => z - w < g0 && z > g1)) {
         // skip through the gap (side alley)
@@ -327,13 +466,22 @@ export class Level {
       }
       const d = opts.depth || 10;
       // round 2: slight setbacks and much more height variety (low older houses next to 6-8 storey towers)
-      const set = opts.setback === false ? 0 : (R() < 0.4 ? 0.25 + R() * 0.5 : 0);
+      const set = opts.setback === false ? 0 : (R() < 0.7 ? 0.1 + R() * 0.95 : 0);
       const cx = xEdge + side * (d / 2 + set);
       const floors = opts.floors ? opts.floors(z) : (R() < 0.2 ? 5 + Math.floor(R() * 3) : 1 + Math.floor(R() * 4));
       this.building(cx, z - w / 2, d, w, floors, { shop: [side < 0 ? 'right' : 'left'], acFace: side < 0 ? 'right' : 'left', towerP: opts.towerP, ...opts.b });
       if (set > 0) this.col(xEdge + (side < 0 ? -set : 0), -1, z - w, xEdge + (side < 0 ? 0 : set), 0.02, z, { ground: true });
       z -= w;
     }
+  }
+  donkeyCartAt(x, z, yaw) {
+    const m = donkeyCart(this.root); m.position.set(x, 0, z); m.rotation.y = yaw;
+    // its footprint, as a vaultable box (local z from the tail board to the donkey's nose)
+    const c = Math.cos(yaw), s = Math.sin(yaw), P = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
+    const pts = [P(-CART_FOOT.hx, CART_FOOT.z0), P(CART_FOOT.hx, CART_FOOT.z0), P(-CART_FOOT.hx, CART_FOOT.z1), P(CART_FOOT.hx, CART_FOOT.z1)];
+    const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+    this.col(Math.min(...xs), 0, Math.min(...zs), Math.max(...xs), 1.05, Math.max(...zs), { vault: true, kind: 'cart' });
+    return m;
   }
   groundBox(x0, z0, x1, z1, mat, y = 0, scale = 6) {
     this.B.box(x0, y - 0.3, z0, x1, y, z1, { top: { mat, scale }, all: null });
@@ -407,7 +555,7 @@ export class Level {
     // the kiosk (koshk) at the street mouth, right side
     this.kiosk(4.05, -91.6);
     // hazards
-    this.cartAt(-2.6, -109, 0.1);
+    // round 3: the cart at z -109 is now a moving donkey cart (hazards.js, placed by the game); its lane is x -3.4
     // low brick wall with a parked tok-tok in the gap
     this.texBox(-5, 0, -134.5, 2.1, 0.95, -133.6, 'brickwall', 1.4, true, { vault: true, kind: 'wall' });
     this.paintBox(-4.6, 0.95, -134.4, 1.8, 1.05, -133.7, C.concrete, false);
@@ -418,7 +566,8 @@ export class Level {
     this.texBox(-5, 0, -161.6, 5, 1.8, -160.6, 'barrier', 1.6, true, { climb: true, kind: 'barrier' });
     this.paintBox(-5, 1.8, -161.5, 5, 1.95, -160.7, C.rust, false);
     for (const x of [-3.9, -2.1, 2.1, 3.9]) this.texBox(x - 0.3, 0, -160.5, x + 0.3, 0.5, -160.0, 'burlap', 0.7, true);
-    this.cartAt(2.2, -175, 0);
+    // the last cart before the gate: a donkey cart loaded with greens, parked (Mzee's alley photos)
+    this.donkeyCartAt(2.6, -176, Math.PI + 0.12);
     // market gate arch
     this.texBox(-6, 0, -188.6, -4.8, 5.2, -187.4, 'brickwall', 1.4, true);
     this.texBox(4.8, 0, -188.6, 6, 5.2, -187.4, 'brickwall', 1.4, true);
@@ -430,6 +579,13 @@ export class Level {
     const R = this.R;
     for (let z = Z0 - 3; z > -186; z -= 5 + R() * 5) { const n = 1 + Math.floor(R() * 3); for (let k = 0; k < n; k++) this.wire([-5.2, 5 + R() * 3.5, z + (R() - 0.5) * 2], [5.2, 5 + R() * 3.5, z + (R() - 0.5) * 7], 0.25 + R() * 0.9); }
     for (const sx of [-5.12, 5.12]) for (let z = Z0; z > -186; z -= 8 + R() * 4) this.wire([sx, 4.3 + R() * 0.7, z], [sx, 4.3 + R() * 0.7, z - 8], 0.3);
+    // round 3: heavy cables slung between buildings high up, with deep sags, often two or three together, some
+    // running at a slant to a building further down; and cables dropping down the walls to the shops
+    for (let z = Z0 - 6; z > -184; z -= 7 + R() * 9) {
+      const n = 1 + Math.floor(R() * 3), y0 = 7 + R() * 5, y1 = 6 + R() * 6, dz = (R() - 0.5) * 14, sag = 0.9 + R() * 1.4;
+      for (let k = 0; k < n; k++) this.wire([-5.4, y0 - k * 0.25, z + k * 0.3], [5.4, y1 - k * 0.2, z + dz + k * 0.3], sag + k * 0.15);
+    }
+    for (const sx of [-5.2, 5.2]) for (let z = Z0 - 4; z > -184; z -= 9 + R() * 10) { const yt = 5.5 + R() * 4; this.wire([sx, yt, z], [sx * 0.995, 3.3, z - 0.6 - R()], 0.15 + R() * 0.25); }
     for (const z of [Z0 - 14, -118, -141, -170]) {
       const y = 6.4 + R() * 1.4, o = Math.floor(R() * 3) * 0.33;
       this.B.quad('laundry', [[-5.2, y - 1.0, z], [5.2, y - 1.15, z], [5.2, y, z], [-5.2, y, z]], [[o, 0], [o + 3, 0], [o + 3, 1], [o, 1]]);
@@ -479,10 +635,11 @@ export class Level {
     // the thief's route: weave lanes through the gaps
     // gaps between stall rows: centre columns at z -204.4, -215.6, -226.8, -238, -249.2, -260.4, -271.6 ...
     this.thiefPath = [
-      [-6.3, -201], [-6.3, -215.6], [0, -215.6], [0, -226.8], [6.3, -226.8], [6.3, -249.2], [0, -249.2], [-6.3, -249.2], [-6.3, -271.6],
-      [0, -271.6], [0, -296], [0, -306], [1.6, -314],
+      // round 3: on the three lanes with a donkey cart the route keeps to the side away from it
+      [-6.3, -201], [-6.3, -215.6], [0, -215.6], [0, -226.8], [5.7, -226.8], [5.7, -249.2], [0, -249.2], [-5.7, -249.2], [-5.7, -271.6],
+      [-0.9, -271.6], [-0.9, -296], [0, -306], [1.6, -314],
     ].map(([x, z]) => new THREE.Vector3(x, 0, z));
-    for (let z = -196; z > -312; z -= 18) { this.wire([-18, 8, z], [18, 8.5, z - 6], 1.2); this.wire([-18, 6.2, z - 3], [18, 6.6, z - 1], 0.9); }
+    for (let z = -196; z > -312; z -= 11 + R() * 9) { this.wire([-18, 7 + R() * 4, z], [18, 7 + R() * 4, z - 6 + R() * 12], 1.0 + R() * 1.8); if (R() < 0.6) this.wire([-18, 6.2, z - 3], [18, 6.6 + R(), z - 1 - R() * 6], 0.9 + R()); }
     // strings of bare bulbs along the lanes, from stall pole to stall pole
     for (const lx of [-6.35, 0, 6.35]) for (let z = -196; z > -300; z -= 1.6) this.bulbs.push([lx + Math.sin(z) * 0.2, 2.85 + Math.sin(z * 0.7) * 0.12, z]);
     for (const lx of [-6.35, 0, 6.35]) this.wire([lx, 3.0, -196], [lx, 3.0, -300], 0.3);
@@ -622,17 +779,19 @@ export class Level {
     const H = ROOF;
     const roof = (x0, z0, x1, z1, h, opts = {}) => this.building((x0 + x1) / 2, (z0 + z1) / 2, x1 - x0, z0 - z1, 0, { h, shop: [], noShop: true, parapetSides: opts.parapet || ['left', 'right'], collideParapet: true, roofProps: false, facade: opts.facade, ...opts.b });
     roof(-10, -918, 10, -940, H.r1, { facade: 'f_ochre' });     // R1 (alley end building)
-    roof(-10, -942.6, 10, -962, H.r2, { facade: 'f_brick_b' }); // R2 after a 2.6 m gap
+    // round 3: the two gaps need a real (sprint) jump: 4.4 m level (a run jump reaches ~4.0, a sprint ~5.6) and
+    // 3.8 m up 0.6 m onto R4 (run ~3.5, sprint ~4.9); a short jump can still catch the ledge and mantle
+    roof(-10, -944.4, 10, -962, H.r2, { facade: 'f_brick_b' }); // R2 after a 4.4 m gap
     roof(-10, -962, 10, -985, H.r3, { facade: 'f_pale' });      // R3, lower
-    roof(-10, -988.2, 10, -1000, H.r4, { facade: 'f_brick_c' }); // R4 after a 3.2 m gap
+    roof(-10, -988.8, 10, -1000, H.r4, { facade: 'f_brick_c' }); // R4 after a 3.8 m gap
     roof(-10, -1000, 10, -1040, H.r5, { facade: 'f_brick_a', parapet: ['left', 'right'] }); // R5, tall
     // the chimney: tower A (tall, west) and block B (east) on R4 against R5's face
     this.building(-3.6, -996.5, 4.6, 7, 0, { h: H.a, noShop: true, facade: 'f_brick_a', roofProps: false, parapet: false });
     this.building(3.6, -996.5, 4.6, 7, 0, { h: H.b, noShop: true, facade: 'f_ochre', roofProps: false, parapet: false });
     for (const b of this.phys.boxes.slice(-2)) b.wall = true;
     // alleys below the gaps get a floor so a fall lands somewhere
-    this.groundBox(-12, -940, 12, -942.6, 'street');
-    this.groundBox(-12, -985, 12, -988.2, 'street');
+    this.groundBox(-12, -940, 12, -944.4, 'street');
+    this.groundBox(-12, -985, 12, -988.8, 'street');
     // side buildings beyond the route (visual)
     for (const z of [-930, -960, -990, -1020]) { this.building(-16, z, 12, 26, 1 + Math.floor(this.R() * 3), { towerP: 0.6 }); this.building(16, z, 12, 26, 1 + Math.floor(this.R() * 3), { towerP: 0.6 }); }
     // pigeon towers right beside the route (wooden lattice legs, painted coop on top)
@@ -841,9 +1000,12 @@ export class Level {
     this.acs.forEach((a, i) => {
       const c = Math.cos(a.yaw), s = Math.sin(a.yaw);
       let lx, lz, r;
-      if (a.face === 'right') { lx = a.w / 2; lz = a.along; r = a.yaw + Math.PI / 2; }
-      else if (a.face === 'left') { lx = -a.w / 2; lz = a.along; r = a.yaw - Math.PI / 2; }
-      else { lx = a.along; lz = a.d / 2; r = a.yaw; }
+      const o = a.out || 0;   // round 3: some on brackets, standing off the wall, and not all square to it
+      if (a.face === 'right') { lx = a.w / 2 + o; lz = a.along; r = a.yaw + Math.PI / 2; }
+      else if (a.face === 'left') { lx = -a.w / 2 - o; lz = a.along; r = a.yaw - Math.PI / 2; }
+      else if (a.face === 'back') { lx = a.along; lz = -a.d / 2 - o; r = a.yaw + Math.PI; }
+      else { lx = a.along; lz = a.d / 2 + o; r = a.yaw; }
+      r += a.tilt || 0;
       M.compose(P.set(a.cx + lx * c + lz * s, a.y, a.cz - lx * s + lz * c), Q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r), S.set(1, 1, 1));
       am.setMatrixAt(i, M);
     });
@@ -945,6 +1107,24 @@ function kioskAtlas(fridgeImg) {
   return t;
 }
 
+// grime streaks: 4 tiles of 128 x 256, dark brown, alpha only where the water ran (soft vertical runs from the
+// top, a stain band at the top edge), so every streak fades out downward
+function grimeTexture() {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256; const x = c.getContext('2d');
+  let seed = 4242; const R = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let k = 0; k < 4; k++) {
+    const X = k * 128;
+    const g = x.createLinearGradient(0, 0, 0, 40); g.addColorStop(0, 'rgba(38,28,18,0.55)'); g.addColorStop(1, 'rgba(38,28,18,0)');
+    x.fillStyle = g; x.fillRect(X + 4, 0, 120, 40);
+    for (let i = 0; i < 9 + k * 3; i++) {
+      const sx = X + 8 + R() * 112, w = 2 + R() * (k === 2 ? 16 : 9), len = 60 + R() * 196, a = 0.18 + R() * 0.32;
+      const gg = x.createLinearGradient(0, 0, 0, len); gg.addColorStop(0, `rgba(34,25,16,${a})`); gg.addColorStop(0.6, `rgba(34,25,16,${a * 0.6})`); gg.addColorStop(1, 'rgba(34,25,16,0)');
+      x.fillStyle = gg; x.beginPath(); x.moveTo(sx, 0); x.lineTo(sx + w, 0); x.lineTo(sx + w * 0.6 + (R() - 0.5) * 4, len); x.lineTo(sx + w * 0.3, len); x.closePath(); x.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 // hand-written price cards on cardboard (512x128: 4 x 2 cards), Arabic numerals in the game font
 function priceCards() {
   const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');

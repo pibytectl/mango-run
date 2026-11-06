@@ -6,7 +6,7 @@ const W = (x, z, o = {}) => ({ x, z, ...o });
 const ROOF_ROUTE = [
   W(-1.5, -906), W(-3.9, -910.5), W(-3.9, -912.4), W(-3.9, -914.3, { jumpAt: 1.0 }), W(-3.6, -915.6, { jumpAt: 0.9 }), W(-3.0, -917.2), W(-2.8, -919.5),
   W(0, -925), W(0, -936, { sprint: true }), W(0, -940.3, { jump: true, sprint: true }), W(0, -955.5, { sprint: true }),
-  W(0, -963, { sprint: true }), W(0, -970, { sprint: true }), W(0, -976, { sprint: true }), W(0, -984.6, { jump: true, sprint: true }), W(0, -990, { sprint: true }),
+  W(0, -963, { sprint: true }), W(0, -970, { sprint: true }), W(0, -976, { sprint: true }), W(0, -985.2, { jump: true, sprint: true }), W(0, -990, { sprint: true }),
   W(0.4, -996.2), W(-0.6, -996.6, { wall: true }), W(2.6, -997.0), W(2.6, -1002.5), W(2.6, -1012), W(2.6, -1031), W(0, -1037, { sprint: true }), W(0, -1043.5, { sprint: true }),
   W(0, -1050), W(0, -1056),
 ];
@@ -51,11 +51,14 @@ export class Bot {
     // dodge oncoming tok-toks
     for (const t of g.streetToks) {
       if (t.vz > 0 && t.z < p.z && p.z - t.z < 16 && Math.abs(t.x - p.x) < 2.2) tx = t.x > 0 ? t.x - 2.9 : t.x + 2.9;
+      if (t.vz < 0 && t.z > p.z && t.z - p.z < 14 && Math.abs(t.x - p.x) < 2.2) tx = t.x > 0 ? t.x - 2.9 : t.x + 2.9;   // from behind
       if (t.vx !== 0 && p.z < -88 && p.z > -104) {
         const tTok = (t.x - p.x) / -t.vx, tHero = (p.z + 103) / 8.5;
         if (tTok > -0.3 && tHero > tTok - 0.6 && tHero < tTok + 1.6 && p.z > -96) go = false;
       }
     }
+    // a wet ring on the ground ahead: steer round it
+    for (const b of g.haz.buckets) if (!b.done && Math.abs(b.x - p.x) < b.r + 0.9 && p.z - b.z > -1.5 && p.z - b.z < 9) tx = b.x > 0.5 ? b.x - 2.4 : b.x + 2.4;
     if (!go) { this.inp.world = { x: 0, z: 0 }; return; }
     this.go(tx, p.z - 6, true);
     for (const L of g.level.laundry) if (p.z - L.z > 1.2 && p.z - L.z < 3.3 && h.state === 'move') this.press('slide');
@@ -71,13 +74,18 @@ export class Bot {
     let w = R.path[Math.min(this.mi, R.path.length - 1)];
     if (Math.hypot(w.x - p.x, w.z - p.z) < 1.4 && this.mi < R.path.length - 1) { this.mi++; w = R.path[this.mi]; }
     // close and on the same stretch: go straight for him, otherwise follow his route
-    if (d < 4 && this.mi >= R.i - 1) this.go(T.pos.x, T.pos.z, true); else this.go(w.x, w.z, true);
+    let gx = d < 4 && this.mi >= R.i - 1 ? T.pos.x : w.x, gz = d < 4 && this.mi >= R.i - 1 ? T.pos.z : w.z;
+    // donkey carts in the lane ahead: keep to the far side of the lane
+    for (const c of g.haz.carts) if (Math.abs(c.pos.x - p.x) < 1.9 && Math.abs(c.pos.z - p.z) < 6) gx = c.pos.x + (c.pos.x > p.x ? -1.75 : 1.75);
+    this.go(gx, gz, true);
     if (d < 2.3 && R.stun <= -0.9 && this.t - this.atkT > 0.35) { this.atkT = this.t; this.press('attack'); }
   }
   chase() {
     const g = this.g, C = g.chase, P = C.player, T = C.thief, I = this.inp;
     if (!C.active) return;
-    let want = T.d;
+    // round 3: come alongside and ram from the side (a straight rear-end into his brakes is a crash)
+    const gap0 = T.s - P.s;
+    let want = gap0 < 9 ? T.d + (P.d <= T.d ? -1.0 : 1.0) : T.d;
     const clear = (d) => { let c = 60; for (const o of C.traffic) { const ds = o.s - P.s; if (ds > -1 && ds < 30 && Math.abs(o.d - d) < 1.9) c = Math.min(c, ds); } return c; };
     if (clear(want) < 26) { let bd = want, bc = -1; for (const d of [-4.6, -2.3, 0, 2.3, 4.6]) { const c = clear(d) - Math.abs(d - P.d) * 0.4; if (c > bc) { bc = c; bd = d; } } want = bd; }
     I.steer = Math.max(-1, Math.min(1, (want - P.d) * 0.45 - P.a * 2.2));
@@ -94,7 +102,14 @@ export class Bot {
     let tgt = null, td = 1e9;
     for (const f of foes) { const d = f.pos.distanceTo(p); if (d < td) { td = d; tgt = f; } }
     const threat = foes.find((f) => (f.state === 'windup' && f.t > 0.25) || (f.state === 'punch' && f.t < 0.45)) ;
-    if (threat && threat.pos.distanceTo(p) < 2.4 && h.state !== 'attack') { this.inp.blockHeld = true; this.inp.world = { x: 0, z: 0 }; return; }
+    if (threat && threat.pos.distanceTo(p) < 2.4 && h.state !== 'attack') {
+      // round 3: thugs circle to his back; a block only covers the front, so one from behind gets a dodge away
+      const tx = threat.pos.x - p.x, tz = threat.pos.z - p.z, td2 = Math.hypot(tx, tz) || 1;
+      const front = (tx * Math.sin(h.yaw) + tz * Math.cos(h.yaw)) / td2 > 0.25;
+      const late = (threat.state === 'windup' && threat.t > (threat.windup || 0.55) - 0.12) || threat.state === 'punch';
+      if (!front && late && h.state !== 'dodge' && this.t - (this.dodgeT || 0) > 0.7) { this.dodgeT = this.t; this.inp.world = { x: -tx / td2, z: -tz / td2 }; this.press('slide'); return; }
+      this.inp.blockHeld = front || !late; this.inp.world = { x: 0, z: 0 }; return;
+    }
     if (td > 1.9) this.go(tgt.pos.x, tgt.pos.z, false);
     else { this.inp.world = { x: 0, z: 0 }; if (this.t - this.atkT > 0.18) { this.atkT = this.t; this.press('attack'); } }
   }

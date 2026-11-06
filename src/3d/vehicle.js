@@ -174,9 +174,10 @@ export class Chase {
     this.traffic = [];
     const R = this.g.level.R;
     const tints = [null, 0x88ccaa, 0xffc87a, 0xb0a0ff, 0xff9a9a];
-    for (let s = 60; s < this.road.len - 60; s += 17 + R() * 15) {
+    // round 3: denser traffic (a vehicle every 13-24 m, was 17-32) and more slow carts
+    for (let s = 55; s < this.road.len - 60; s += 13 + R() * 11) {
       const onc = R() < 0.42;
-      const kind = R() < 0.18 ? 'cart' : 'tok';
+      const kind = R() < 0.24 ? 'cart' : 'tok';
       const t = { s, d: onc ? -2.4 - R() * 2.2 : 1.6 + R() * 3, v: onc ? -(6 + R() * 4) : (kind === 'cart' ? 1.5 : 5 + R() * 4), kind, len: kind === 'cart' ? 2.4 : TOK_LEN, wid: kind === 'cart' ? 1.2 : TOK_WID };
       if (kind === 'cart') {
         const m = A.glb.cart.scene.clone(); m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -231,23 +232,32 @@ export class Chase {
     const gap = T.s - P.s;
     // rubber band: ahead he cruises a touch under your top speed; up close he floors it, so the boost is
     // what lets you ram him
-    let want = MAXV * 0.92;
-    if (gap > 30) want = MAXV * 0.78; else if (gap > 20) want = MAXV * 0.86; else if (gap < 6) want = MAXV * 1.04;
-    if (T.s > this.road.len - 60) want = Math.min(want, MAXV * 0.85);
-    T.v += Math.sign(want - T.v) * Math.min(Math.abs(want - T.v), 6 * dt);
+    // round 3: less waiting for a slow driver (was 0.92 / 0.78 far / 0.86 / 1.04 close)
+    let want = MAXV * 0.96;
+    if (gap > 30) want = MAXV * 0.86; else if (gap > 20) want = MAXV * 0.91; else if (gap < 6) want = MAXV * 1.08;
+    if (T.s > this.road.len - 60) want = Math.min(want, MAXV * 0.9);
+    // brake check: with Radwan right on his tail in the same lane he stamps on the brake for half a second; a
+    // straight rear-end is a crash for Radwan, the ram has to come from the side
+    T.brakeT = (T.brakeT || 0) - dt; T.brakeCool = (T.brakeCool || 0) - dt;
+    if (T.brakeCool <= 0 && gap > 2.6 && gap < 6 && Math.abs(P.d - T.d) < 0.7 && P.v > T.v - 0.5) { T.brakeT = 0.55; T.brakeCool = 4 + Math.random() * 2; g.onChase('brake', P, T); }
+    if (T.brakeT > 0) want = MAXV * 0.45;
+    T.v += Math.sign(want - T.v) * Math.min(Math.abs(want - T.v), (T.brakeT > 0 ? 16 : 6) * dt);
     if (this.t % 0.25 < dt) {
       let best = T.wantD, bestScore = -1e9;
       for (const d of [-4.5, -2.2, 0, 2.2, 4.5]) {
         let clear = 40;
         for (const o of this.traffic) { const ds = o.s - T.s; if (ds > -2 && ds < 40 && Math.abs(o.d - d) < 1.8) clear = Math.min(clear, ds); }
-        const score = clear * 2 - Math.abs(d - T.d) * 1.5 + Math.sin(this.t * 0.7 + d) * 2;
+        // round 3: he weaves (a lane change every few seconds even on a clear road), and when Radwan is close
+        // he likes the lane that puts a car between them
+        let score = clear * 2 - Math.abs(d - T.d) * 1.1 + Math.sin(this.t * 1.1 + d * 1.7) * 6;
+        if (gap < 12) score -= Math.abs(d - P.d) < 1.5 ? 8 : 0;
         if (score > bestScore) { bestScore = score; best = d; }
       }
       T.wantD = best;
     }
     if (T.s > this.road.len - 50) T.wantD = 1.4; // heading for the alley
     T.wob *= Math.max(0, 1 - 3 * dt);
-    T.a = THREE.MathUtils.clamp((T.wantD - T.d) * 0.12, -0.35, 0.35) + Math.sin(this.t * 9) * T.wob;
+    T.a = THREE.MathUtils.clamp((T.wantD - T.d) * 0.16, -0.42, 0.42) + Math.sin(this.t * 9) * T.wob;
     T.roll = -T.a * 0.15;
     T.s += T.v * Math.cos(T.a) * dt; T.d = THREE.MathUtils.clamp(T.d + T.v * Math.sin(T.a) * dt, -W, W);
     // --- traffic
@@ -272,15 +282,24 @@ export class Chase {
     if (this.overlap(P, T) && P.bumpT <= 0) {
       P.bumpT = 0.6;
       const side = Math.sign(T.d - P.d) || 1;
+      // straight into his back, fast: Radwan's front wheel takes it (a crash, not a ram)
+      if (Math.abs(P.d - T.d) < 0.45 && P.v - T.v > 3.5 && P.s < T.s) {
+        P.v = Math.max(2, T.v * 0.5); P.a = -side * 0.3; T.wob = 0.2;
+        g.onChase('crash', P, T); g.onChase('rear', P, T);
+        this.place(P); this.place(T);
+        return;
+      }
       T.d += side * 0.6; T.wob = 0.35; P.v = Math.max(P.v * 0.8, T.v * 0.9); P.a = -side * 0.12;
       g.onChase('bump', P, T);
     }
     if (P.s > T.s - 0.5 && Math.abs(P.d - T.d) < TOK_WID) { P.s = T.s - 0.6; P.v = Math.min(P.v, T.v); }
     this.place(P); this.place(T);
     // escape check / end
-    if (gap > 75) this.escapeT += dt; else this.escapeT = 0;
-    if (this.escapeT > 4) { this.ended = true; g.onChase('escaped'); }
-    else if (T.s > this.road.len - 34 && !this.ended) { this.ended = true; g.onChase(gap < 45 ? 'end' : 'escaped'); }
+    // round 3: the gap matters (was: escaped after 4 s beyond 75 m, caught at the end within 45 m)
+    if (gap > 55) this.escapeT += dt; else this.escapeT = 0;
+    this.gapNow = gap;
+    if (this.escapeT > 3) { this.ended = true; g.onChase('escaped'); }
+    else if (T.s > this.road.len - 34 && !this.ended) { this.ended = true; g.onChase(gap < 32 ? 'end' : 'escaped'); }
   }
   // world position helper for seats
   seat(o, fwd, up, side = 0) {
