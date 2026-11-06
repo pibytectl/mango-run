@@ -17,7 +17,7 @@ import { Dog } from './dog.js';
 import { R2 } from './level2.js';
 import { I3 } from './input3d.js';
 import { sfx3 } from './sfx3d.js';
-import { sfx } from '../audio.js';
+import { sfx, duckMusicFor } from '../audio.js';
 import { num } from '../strings.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -36,6 +36,10 @@ const PATIENCE = { P1: 14, P2: 12, P3: 12, P4: 12, P5: 12, P6: 11, P7: 11, P8: 1
 const NEXT = { P1: 'P2', P2: 'P3', P3: 'P4', P4: 'P5', P5: 'P6', P6: 'P7', P7: 'P8', P8: 'pole' };
 const WHISTLED = { P3: true, P5: true, P7: true };   // Zaghloul whistles as she leaves these perches
 const FLUSH = 6.5;          // she takes off when he is this close (or once he has run past her)
+const CALL_WINDOW = 1.8;    // seconds (game time) to call her back once Zaghloul whistles
+const TEACH_SLOW = 0.6;     // the first whistle for a player who has never answered one runs at this speed
+const LEARNED = 'saidi.m2callback';
+const learned = () => { try { return localStorage.getItem(LEARNED) === '1'; } catch (e) { return false; } };
 // checkpoints in course order: the section they belong to and the perch Sukkara is on when he gets there
 const CPS = { start: ['m2a', 'P1'], B: ['m2b', 'P2'], C: ['m2b', 'P3'], E: ['m2c', 'P4'], F: ['m2c', 'P5'], J: ['m2e', 'P6'], K: ['m2e', 'P7'], L: ['m2d', 'P8'], G: ['m2d', 'pole'] };
 
@@ -162,7 +166,7 @@ export class Mission2 {
     this.ladder.visible = this.ladderBox.on = this.t3 === true;
     this.cylWorld.visible = this.t3 !== true; this.cylWorld.position.copy(M.cyl); this.cylWorld.rotation.set(0, 0, 0);
     this.dog.reset(); this.dog.show(true);
-    this.flock.whistle(false); this.whistle = null; this.lure = null; this.showLure(false);
+    this.flock.whistle(false); this.whistle = null; this.endWhistle(); this.lure = null; this.showLure(false);
     // where Sukkara is
     const [seg, at] = CPS[sub];
     this.suk.show(true); this.perchAt(at);
@@ -188,28 +192,68 @@ export class Mission2 {
     this.g.log('sukkara', from, '->', to);
   }
   landed(name) { this.stage = name; this.patience = PATIENCE[name] || 0; if (name === 'P3' && this.t2 === null) this.startSika(); if (name === 'pole') this.startFinale(); }
-  // ---- Zaghloul's whistle in flight: a 1.8 s window to call her back with the staff button
+  // ---- Zaghloul's whistle in flight: a 1.8 s window to call her back with the staff button.
+  // Round 2 (Mzee on a phone: "How is he supposed to whistle??", "I'm on phone, what staff button?", "There is no
+  // whistle at all"): a real whistle (sfx3.whistle, the music dips under it), a big centred call-back banner with
+  // a countdown bar, on touch the staff button itself pulses with a ring shrinking onto it, on a desktop the key;
+  // a camera shake and a gold vignette pulse as it starts. A player who has never answered one gets the first
+  // whistle of the run at 0.6x with a one-line tip.
   startWhistle(then) {
     const g = this.g;
-    this.flock.whistle(true); this.whistleSound(); g.voice.say('q3', 2);
-    this.whistle = { t: 0, then, answered: false };
+    this.flock.whistle(true); this.whistleSound(1);
+    const W = this.whistle = { t: 0, then, answered: false, teach: false };
+    // his line after the whistle, not over it
+    setTimeout(() => { if (this.whistle === W && g.state === 'play') g.voice.say('q3', 2); }, 1000);
     this.suk.flyTo(V(this.suk.pos.x + 2, this.suk.pos.y + 2.5, this.suk.pos.z - 3), { up: 1 });
-    g.stickyHint('callback', { ar: 'زغلول بيصفّر! نادي سُكّرة دلوقتي (زرار النبّوت)', en: I3.touch ? 'Zaghloul is whistling! Call Sukkara now (staff button)' : 'Zaghloul is whistling! Call Sukkara now (J or click)' }, 'attack');
+    g.cam.shake(0.3);
+    W.teach = !this.taught && !g.bot && !learned();
+    if (W.teach) { this.taught = true; g.timeScale = TEACH_SLOW; }
+    this.callbackUi(true, W.teach);
+    g.log('whistle', { teach: W.teach, touch: I3.touch });
   }
-  whistleSound() { const s = () => { sfx3.telegraph(); }; s(); setTimeout(s, 180); setTimeout(() => sfx.timeTick(), 420); }
+  // vol 1: the in-flight whistle (near, loud, the music well down); less: the finale's repeated whistles
+  whistleSound(vol = 1) { sfx3.whistle(vol); duckMusicFor(vol >= 1 ? 0.22 : 0.55, 1.15); }
   stepWhistle(dt, I) {
     const W = this.whistle, g = this.g; if (!W) return;
     W.t += dt;
-    if (W.t < 1.8) {
-      g.stickyHint('callback', { ar: 'زغلول بيصفّر! نادي سُكّرة دلوقتي (زرار النبّوت)', en: 'Zaghloul is whistling! Call Sukkara now (staff button)' }, 'attack');
-      if (I.attackPressed) { W.answered = true; g.voice.say('q4', 2); g.clearSticky(); this.flock.whistle(false); this.whistle = null; g.log('whistle answered'); W.then(); g.stats.callbacks = (g.stats.callbacks || 0) + 1; }
+    if (W.t < CALL_WINDOW) {
+      this.callbackTick(1 - W.t / CALL_WINDOW);
+      if (I.attackPressed) {
+        W.answered = true; this.whistle = null; this.endWhistle();
+        g.voice.say('q4', 2); this.flock.whistle(false);
+        g.log('whistle answered', { t: +W.t.toFixed(2), touch: I3.touch });
+        g.stats.callbacks = (g.stats.callbacks || 0) + 1;
+        try { localStorage.setItem(LEARNED, '1'); } catch (e) {}
+        W.then();
+      }
       return;
     }
     // missed: she circles over Zaghloul's tower with his flock for a while, then goes on
-    g.clearSticky(); this.whistle = null; g.log('whistle missed');
+    this.whistle = null; this.endWhistle(); g.log('whistle missed');
     this.suk.circle(this.M.flock.clone().add(V(0, 1, 0)), 5.5, 1.3);
     setTimeout(() => { if (this.stage === 'fly' && this.suk.state === 'circle') { this.flock.whistle(false); W.then(); } }, 5000);
-    g.toast({ ar: 'راحت تلف مع حمام زغلول...', en: 'She went circling with Zaghloul\'s flock...' }, 2.4);
+    g.toast({ ar: 'راحت تلف مع حمام زغلول... أول ما يصفّر، دوس على النبّوت', en: I3.touch ? 'She went circling with Zaghloul\'s flock... tap the STAFF button as soon as he whistles' : 'She went circling with Zaghloul\'s flock... press J as soon as he whistles' }, 3);
+  }
+  endWhistle() { this.g.timeScale = 1; this.callbackUi(false); }
+  // the call-back prompt: the banner (#callback3d) and, on touch, the staff button pulsing with a countdown ring
+  callbackUi(on, teach) {
+    const el = $('callback3d'), btn = document.querySelector('#c3d [data-b="attack"]');
+    if (btn) { btn.classList.toggle('callback', on); btn.style.setProperty('--cb', '1'); }
+    if (!el) return;
+    if (!on) { el.classList.add('hidden'); return; }
+    const touch = I3.touch;
+    // the key in a keycap (a bare Latin J in the Arabic line read as a ل)
+    el.querySelector('.cb-ar').innerHTML = 'صفّر لسُكّرة! دوس على النبّوت' + (touch ? '' : ' <kbd dir="ltr">J</kbd>');
+    el.querySelector('.cb-en').innerHTML = touch ? 'Call Sukkara back! Tap the <u>STAFF</u> button' : 'Call Sukkara back! Press <kbd>J</kbd> or <kbd>click</kbd>';
+    el.querySelector('.cb-tip').classList.toggle('hidden', !teach);
+    el.classList.toggle('touch', touch);
+    el.classList.add('hidden'); void el.offsetWidth; el.classList.remove('hidden');   // replay the entrance and the vignette pulse
+    this.callbackTick(1);
+  }
+  callbackTick(left) {
+    const el = $('callback3d'), btn = document.querySelector('#c3d [data-b="attack"]'), v = Math.max(0, Math.min(1, left)).toFixed(3);
+    if (el) el.style.setProperty('--cb', v);
+    if (btn) btn.style.setProperty('--cb', v);
   }
 
   // ------------------------------------------------------------------ the main step
@@ -412,7 +456,7 @@ export class Mission2 {
     // Zaghloul whistles every few seconds: 0.8 s of warning (his arm up, the bar goes red), 1.0 s of whistle
     L.nextWhistle -= dt;
     if (L.nextWhistle <= 0 && L.whistling <= 0) { L.whistling = 1.8; L.nextWhistle = 3.4 + Math.random() * 1.6; this.zag.anim.play('wave', { fade: 0.1, restart: true }); if (Math.random() < 0.5) g.voice.bark('z1', 'z1', 6, 1); }
-    if (L.whistling > 0) { const before = L.whistling; L.whistling -= dt; if (before > 1.0 && L.whistling <= 1.0) this.whistleSound(); }
+    if (L.whistling > 0) { const before = L.whistling; L.whistling -= dt; if (before > 1.0 && L.whistling <= 1.0) this.whistleSound(0.7); }
     // she looks at him for 0.75 s every 1.4-2 s (never during a whistle)
     L.nextLook -= dt;
     if (L.look > 0) L.look -= dt;

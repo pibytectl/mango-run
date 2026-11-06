@@ -16,7 +16,56 @@ function noise(dur, vol, type, freq, q = 1, delay = 0, f1) {
   const g = ctx.createGain(); env(g, t, 0.003, dur, vol); s.connect(f); f.connect(g); g.connect(sfxGain); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
 }
 
+// Zaghloul's whistle (Mzee: "There is no whistle at all": it was two 0.1-volume 660 Hz blips). A two-finger
+// street whistle, the pigeon keepers' call on the Imbaba roofs: a near-sine around 2.5-3.3 kHz (where a phone
+// speaker and the ear are loudest) with a fast upward slide into each blast, a wide vibrato, a little breath,
+// and a fall at the end of the long second blast ("wheet... wheeee-oo"), then a slap of echo off the walls.
+// whistleTo() draws into any context and output (an OfflineAudioContext in the tests); vol 1 = full, near.
+let whistleWave = null;
+function blast(ctx, out, t, f0, f1, f2, dur, vol, noiseBuf) {
+  const o = ctx.createOscillator();
+  if (!whistleWave || whistleWave.ctx !== ctx) whistleWave = { ctx, w: ctx.createPeriodicWave(new Float32Array([0, 0, 0, 0]), new Float32Array([0, 1, 0.1, 0.03])) };
+  o.setPeriodicWave(whistleWave.w);
+  const f = o.frequency, rise = 0.055;
+  f.setValueAtTime(f0, t); f.exponentialRampToValueAtTime(f1, t + rise);
+  f.linearRampToValueAtTime(f1 * 1.025, t + dur * 0.62); f.exponentialRampToValueAtTime(f2, t + dur);
+  const lfo = ctx.createOscillator(), depth = ctx.createGain();
+  lfo.frequency.value = 7.2; depth.gain.setValueAtTime(0, t); depth.gain.linearRampToValueAtTime(f1 * 0.028, t + 0.14);
+  lfo.connect(depth); depth.connect(f);
+  const g = ctx.createGain(), a = g.gain;
+  a.setValueAtTime(0.0001, t); a.exponentialRampToValueAtTime(vol, t + 0.025);
+  a.setValueAtTime(vol, t + dur - 0.07); a.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(out);
+  o.start(t); lfo.start(t); o.stop(t + dur + 0.02); lfo.stop(t + dur + 0.02);
+  if (noiseBuf) {   // breath through the fingers: narrow noise riding the same pitch
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 7;
+    bp.frequency.setValueAtTime(f0, t); bp.frequency.exponentialRampToValueAtTime(f1, t + rise); bp.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(vol * 0.5, t + 0.02); ng.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(bp); bp.connect(ng); ng.connect(out); s.start(t, Math.random() * 0.25); s.stop(t + dur + 0.02);
+  }
+}
+export function whistleTo(ctx, out, t0, { vol = 1, echo = true, noiseBuf = null } = {}) {
+  const bus = ctx.createGain(); bus.gain.value = 1; bus.connect(out);
+  const v = 0.42 * vol, nodes = [bus];
+  blast(ctx, bus, t0, 1350, 2750, 2550, 0.3, v, noiseBuf);           // short "wheet"
+  blast(ctx, bus, t0 + 0.4, 1500, 3150, 2150, 0.68, v, noiseBuf);     // long "wheeee-oo"
+  if (echo) {   // off the walls across the street: one quieter, darker repeat and a tail
+    const d = ctx.createDelay(1); d.delayTime.value = 0.26;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+    const wet = ctx.createGain(); wet.gain.value = 0.32; const fb = ctx.createGain(); fb.gain.value = 0.3;
+    bus.connect(d); d.connect(lp); lp.connect(wet); wet.connect(out); lp.connect(fb); fb.connect(d);
+    nodes.push(d, lp, wet, fb);
+  }
+  // a live context: let go of the graph once the echo has died away (an offline render just ends)
+  const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+  if (!offline) setTimeout(() => { for (const n of nodes) { try { n.disconnect(); } catch (e) {} } }, (t0 - ctx.currentTime + 3.2) * 1000);
+  return 1.08;   // seconds of whistle (without the echo tail)
+}
+
 export const sfx3 = {
+  // vol: 1 near and loud (the in-flight whistle), less for the repeated finale whistles
+  whistle(vol = 1) { const { ctx, sfxGain, noiseBuf } = audioParts(); if (!ctx) return 0; return whistleTo(ctx, sfxGain, ctx.currentTime + 0.01, { vol, noiseBuf }); },
   whoosh(i = 0) { noise(0.22, 0.32, 'bandpass', 400 + i * 120, 2.2, 0, 2400); },
   staffHit(big) { tone('sine', 190, 60, 0.16, big ? 0.65 : 0.5); noise(0.07, 0.5, 'bandpass', 2600, 1.6); noise(0.14, 0.35, 'lowpass', 800); if (big) tone('square', 90, 40, 0.18, 0.12); },
   clack() { tone('triangle', 1400, 900, 0.06, 0.28); noise(0.06, 0.45, 'bandpass', 3200, 3); tone('sine', 420, 300, 0.08, 0.2); },

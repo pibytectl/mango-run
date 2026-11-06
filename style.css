@@ -364,3 +364,39 @@ body.m2 #slot-mango { display: none; }
 #lure3d.go { border-color: #9fffb0; box-shadow: 0 0 16px rgba(140, 255, 160, 0.7); }
 #lure3d.red { border-color: #ff3a2a; box-shadow: 0 0 16px rgba(255, 40, 20, 0.8); }
 #lure3d.hidden { display: none; }
+
+/* Mission 2: Zaghloul whistles, call Sukkara back (round 2, Mzee on a phone: "what staff button?").
+   A big centred banner with a countdown bar (--cb: 1 -> 0 over the window), a gold vignette pulse as it starts,
+   and on touch the staff button glowing and pulsing with a ring that shrinks onto it as the time runs out. */
+#callback3d { position: absolute; inset: 0; pointer-events: none; z-index: 4; --cb: 1; }
+#callback3d.hidden { display: none; }
+#callback3d::before { content: ''; position: absolute; inset: 0; opacity: 0.35;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 48%, rgba(255, 196, 60, 0.6) 100%); animation: cbVig .7s ease-out, cbVigP .6s .7s ease-in-out infinite alternate; }
+@keyframes cbVig { 0% { opacity: 1; } 100% { opacity: 0.35; } }
+@keyframes cbVigP { to { opacity: 0.15; } }
+#callback3d .cb-box { position: absolute; top: 17%; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(86vw, 640px);
+  text-align: center; background: rgba(30, 14, 6, 0.9); border: 2px solid #ffd36a; border-radius: 18px; padding: 4px 22px 8px;
+  box-shadow: 0 0 26px rgba(255, 200, 70, 0.75), 0 6px 18px rgba(0,0,0,0.5); animation: cbIn .28s ease-out, cbBeat .5s .28s ease-in-out infinite alternate; }
+@keyframes cbIn { 0% { opacity: 0; transform: translateX(-50%) scale(1.5); } 100% { opacity: 1; transform: translateX(-50%) scale(1); } }
+@keyframes cbBeat { to { transform: translateX(-50%) scale(1.045); } }
+#callback3d .cb-ar { font-size: clamp(22px, 8vh, 40px); font-weight: 900; line-height: 1.35; color: var(--gold2, #ffd36a); text-shadow: 0 2px 0 #6a2e0c, 0 4px 14px rgba(0,0,0,0.6); }
+#callback3d .cb-en { font-size: clamp(13px, 4vh, 19px); font-weight: 700; color: #fff4de; }
+#callback3d .cb-en u { text-decoration: none; color: #ffd36a; }
+#callback3d kbd { display: inline-block; min-width: 1.5em; padding: 0 6px; margin: 0 2px; border-radius: 6px; font: inherit; font-weight: 900; color: #2a1406;
+  background: #ffe9b0; border: 1px solid #fff; box-shadow: 0 2px 0 #a07020; text-shadow: none; line-height: 1.25; }
+#callback3d .cb-ar kbd { font-size: 0.75em; vertical-align: 0.1em; }
+#callback3d kbd, #callback3d kbd * { font-family: system-ui, 'Segoe UI', Arial, sans-serif !important; }   /* Cairo's J reads as a ل */
+#callback3d .cb-ar { white-space: nowrap; }
+#callback3d .cb-bar { height: 8px; margin: 6px auto 2px; width: 82%; border-radius: 4px; background: rgba(0,0,0,0.5); overflow: hidden; }
+#callback3d .cb-bar i { display: block; height: 100%; width: calc(var(--cb) * 100%); background: linear-gradient(90deg, #ff7a3a, #ffd36a); }
+#callback3d .cb-tip { margin-top: 4px; padding-top: 4px; border-top: 1px solid rgba(255, 220, 160, 0.3); }
+#callback3d .cb-tip .ar { display: block; font-size: clamp(13px, 3.8vh, 17px); font-weight: 700; color: #b9f0a6; }
+#callback3d .cb-tip .en { display: block; font-size: clamp(11px, 3vh, 13px); color: #e8ffe0; }
+#callback3d .cb-tip.hidden { display: none; }
+#c3d .b-atk.callback { background: rgba(255, 196, 60, 0.6); border: 3px solid #fff3c0; color: #fff; animation: cbBtn .45s ease-in-out infinite alternate; }
+#c3d .b-atk.callback.on { transform: scale(0.92); }
+@keyframes cbBtn { 0% { box-shadow: 0 0 0 4px rgba(255, 220, 120, 0.6), 0 0 18px rgba(255, 190, 60, 0.8); }
+  100% { box-shadow: 0 0 0 10px rgba(255, 220, 120, 0.25), 0 0 34px rgba(255, 190, 60, 1); } }
+/* the countdown ring: 2.4x the button at the start, on the button's rim when the window closes */
+#c3d .b-atk.callback::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 4px solid #ffe08a; pointer-events: none;
+  transform: scale(calc(1 + var(--cb, 1) * 1.4)); opacity: calc(1 - var(--cb, 1) * 0.45); box-shadow: 0 0 10px rgba(255, 200, 70, 0.9); }

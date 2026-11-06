@@ -1434,6 +1434,7 @@ class Game3D {
     if (this.state !== 'play' || this.mode !== 'play') return;
     this.state = 'fail'; this.deaths++; this.fails++;
     this.engine.stop();
+    if (this.m2) this.m2.endWhistle();   // no call-back prompt (or slow motion) over the fail screen
     this.log('fail', kind, { seg: this.seg, z: Math.round(this.hero.pos.z) });
     this.showControls(false);
     const T = {

@@ -1,5 +1,5 @@
 // WebAudio: two music loops (decoded on first gesture) and synthesized sound effects (no SFX assets).
-let ctx = null, master, musicGain, sfxGain, voiceGain, noiseBuf;
+let ctx = null, master, musicGain, duckGain, sfxGain, voiceGain, noiseBuf;
 const music = { buffers: {}, src: null, name: null };
 let enabled = true;
 
@@ -52,7 +52,9 @@ export function audioInit(why = 'gesture') {
   tryResume(why);
   master = ctx.createGain(); master.gain.value = enabled ? 1 : 0; master.connect(ctx.destination);
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(master);
-  musicGain = ctx.createGain(); musicGain.gain.value = 0.5; musicGain.connect(comp);
+  // music -> duck (a short dip under a loud cue, independent of the voice ducking on musicGain) -> compressor
+  duckGain = ctx.createGain(); duckGain.gain.value = 1; duckGain.connect(comp);
+  musicGain = ctx.createGain(); musicGain.gain.value = 0.5; musicGain.connect(duckGain);
   sfxGain = ctx.createGain(); sfxGain.gain.value = 0.8; sfxGain.connect(comp);
   voiceGain = ctx.createGain(); voiceGain.gain.value = 1.0; voiceGain.connect(master);
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -176,6 +178,13 @@ export function setAmbient(vol, name = 'street') {
 export function audioParts() { return { ctx, sfxGain, voiceGain, musicGain, noiseBuf }; }
 export function setMusicRate(r) { if (music.src && ctx) music.src.playbackRate.setTargetAtTime(r, ctx.currentTime, 0.5); }
 export function stopMusic() { playMusic('__none__'); }
+// dip the music to `level` for `hold` seconds, then bring it back (a cue that must be heard: Zaghloul's whistle)
+export function duckMusicFor(level, hold) {
+  if (!ctx || !duckGain) return;
+  const g = duckGain.gain, t = ctx.currentTime;
+  if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(t); else { g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); }
+  g.setTargetAtTime(level, t, 0.03); g.setTargetAtTime(1, t + hold, 0.3);
+}
 export function setMusicDuck(v) { if (musicGain) musicGain.gain.setTargetAtTime(0.5 * v, ctx.currentTime, 0.2); }
 
 export function setSound(on) {
