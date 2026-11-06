@@ -13,7 +13,7 @@ const FLOOR0 = 3.4, FLOOR = 3.2, TILE = 6.4, SHOP_W = 5.1;
 // is ~100 m instead of ~190 m. Everything in the plaza and the intro is placed relative to it.
 export const PLAZA_Z = -86;
 export const ROOF = { // heights of the rooftop route
-  r1: 4.8, r2: 4.8, r3: 2.6, r4: 3.2, b: 6.6, a: 9.5, r5: 7.0,
+  r1: 4.8, r2: 4.8, r3: 2.75, r4: 3.0, b: 6.6, a: 9.5, r5: 7.0,
 };
 
 export function makeMaterials() {
@@ -630,6 +630,10 @@ export class Level {
       this.crateStack(x, z, R);
     }
     this.cartAt(-12.8, -205, Math.PI / 2, {}); this.cartAt(12.8, -262, Math.PI / 2);
+    // round 4: cut-throughs. The crossing gaps the thief dives through are hung with low khayamiya cloths: he
+    // ducks through at a run, Radwan has to slide (or ducks and loses time)
+    this.cloths = [];
+    for (const [x, z] of [[-3.2, -215.6], [3.2, -226.8], [-3.2, -271.6]]) this.marketCloth(x, z);
     this.spawns.vendor = new THREE.Vector3(-1.6, 0, -192);
     this.spawns.goat = new THREE.Vector3(-7, 0, -238);
     // the thief's route: weave lanes through the gaps
@@ -645,6 +649,13 @@ export class Level {
     for (const lx of [-6.35, 0, 6.35]) this.wire([lx, 3.0, -196], [lx, 3.0, -300], 0.3);
     // strings of khayamiya bunting
     this.spawns.cpChase = new THREE.Vector3(0, 0, -200);
+  }
+  marketCloth(x, zc) {
+    const y0 = 1.08, y1 = 2.42, hw = 2.0;
+    this.B.quad('khay', [[x, y0, zc + hw], [x, y0, zc - hw], [x, y1, zc - hw], [x, y1, zc + hw]], [[0, 0], [1.6, 0], [1.6, 0.6], [0, 0.6]]);
+    this.paintBox(x - 0.03, y1, zc - hw, x + 0.03, y1 + 0.05, zc + hw, C.rope, false);
+    const b = this.col(x - 0.12, y0, zc - hw, x + 0.12, y1, zc + hw, { kind: 'laundry', noCam: true });
+    this.cloths.push({ x, z: zc, bottom: y0, b });
   }
   stall(x, z, R) {
     const w = 2.4, d = 1.3, top = 0.95;
@@ -781,17 +792,34 @@ export class Level {
     roof(-10, -918, 10, -940, H.r1, { facade: 'f_ochre' });     // R1 (alley end building)
     // round 3: the two gaps need a real (sprint) jump: 4.4 m level (a run jump reaches ~4.0, a sprint ~5.6) and
     // 3.8 m up 0.6 m onto R4 (run ~3.5, sprint ~4.9); a short jump can still catch the ledge and mantle
-    roof(-10, -944.4, 10, -962, H.r2, { facade: 'f_brick_b' }); // R2 after a 4.4 m gap
-    roof(-10, -962, 10, -985, H.r3, { facade: 'f_pale' });      // R3, lower
-    roof(-10, -988.8, 10, -1000, H.r4, { facade: 'f_brick_c' }); // R4 after a 3.8 m gap
-    roof(-10, -1000, 10, -1040, H.r5, { facade: 'f_brick_a', parapet: ['left', 'right'] }); // R5, tall
+    // round 4 (Andy: "still not difficult"): R2 is shorter and ends at a crumbling cornice ledge along a tall
+    // wall (one piece missing: a hop), R3 ends at a 7.5 m gap only a neighbour's sliding plank crosses (timed),
+    // and R5 is cut by a light well roofed with rotten tin sheets that give way under him
+    roof(-10, -944.4, 10, -955, H.r2, { facade: 'f_brick_b' }); // R2 after a 4.4 m gap
+    roof(-10, -967, 10, -981.3, H.r3, { facade: 'f_pale' });    // R3, lower, after the cornice
+    roof(-10, -988.8, 10, -1000, H.r4, { facade: 'f_brick_c' }); // R4 across the plank gap
+    roof(-10, -1000, 10, -1012, H.r5, { facade: 'f_brick_a', parapet: ['left', 'right'] }); // R5a, tall
+    roof(-10, -1017, 10, -1040, H.r5, { facade: 'f_brick_a', parapet: ['left', 'right'] }); // R5b, past the light well
+    // the cornice: a tall block on the east side of the alley, a 1.4 m concrete ledge along its west wall
+    this.building(5.45, -961, 9.1, 12, 0, { h: 11.6, noShop: true, facade: 'f_brick_c', roofProps: false, parapet: false });
+    this.phys.boxes[this.phys.boxes.length - 1].noClimb = true;
+    const crumble = this.spawns.crumble = [];
+    for (const [z0, z1] of [[-955, -956.5], [-956.5, -958], [-958, -959.5], [-959.5, -961], [-962.6, -964.1], [-964.1, -965.6], [-965.6, -967]]) crumble.push({ x0: -0.5, x1: 0.9, z0: z1, z1: z0, y: H.r2, th: 0.35, kind: 'cornice' });
+    for (let i = 0; i < 3; i++) crumble.push({ x0: -10, x1: 10, z0: -1012 - (i + 1) * 5 / 3, z1: -1012 - i * 5 / 3, y: H.r5, th: 0.08, kind: 'tin' });
+    // a low kerb on R3's far edge (the plank's tip rests on it) and the plank's travel: lying on R4 (retracted)
+    // or across the gap with its tip on the kerb (extended)
+    this.paintBox(-10, H.r3, -981.3, 10, H.r3 + 0.33, -981.0, C.concrete, true, { kind: 'kerb' });
+    this.spawns.plank = { hw: 0.62, len: 8.3, y: H.r4 + 0.1, zExt: -980.9, zRet: -988.6 };
+    this.spawns.jug = new THREE.Vector3(-3.2, H.r1, -923.5);
     // the chimney: tower A (tall, west) and block B (east) on R4 against R5's face
     this.building(-3.6, -996.5, 4.6, 7, 0, { h: H.a, noShop: true, facade: 'f_brick_a', roofProps: false, parapet: false });
     this.building(3.6, -996.5, 4.6, 7, 0, { h: H.b, noShop: true, facade: 'f_ochre', roofProps: false, parapet: false });
     for (const b of this.phys.boxes.slice(-2)) b.wall = true;
     // alleys below the gaps get a floor so a fall lands somewhere
     this.groundBox(-12, -940, 12, -944.4, 'street');
-    this.groundBox(-12, -985, 12, -988.8, 'street');
+    this.groundBox(-12, -955, 0.9, -967, 'street');
+    this.groundBox(-12, -981.3, 12, -988.8, 'street');
+    this.groundBox(-12, -1012, 12, -1017, 'street');
     // side buildings beyond the route (visual)
     for (const z of [-930, -960, -990, -1020]) { this.building(-16, z, 12, 26, 1 + Math.floor(this.R() * 3), { towerP: 0.6 }); this.building(16, z, 12, 26, 1 + Math.floor(this.R() * 3), { towerP: 0.6 }); }
     // pigeon towers right beside the route (wooden lattice legs, painted coop on top)
@@ -804,16 +832,15 @@ export class Level {
     this.spawns.whitePigeon = new THREE.Vector3(5.5, H.r1 + 2.1, -929);
     // R2: low laundry line on the roof, AC box to vault
     this.roofLaundry(-950, H.r2);
-    this.texBox(-2.5, H.r2, -957.5, 2.5, H.r2 + 0.95, -956.6, 'brickwall', 1.4, true, { vault: true });
-    this.roofDish(7, H.r2, -945); this.roofTank(-7, H.r2, -959);
+    this.roofDish(7, H.r2, -945); this.roofTank(-6.6, H.r2, -946.6);
     // R3: parapet wall across to vault
     this.texBox(-10, H.r3, -972.4, 10, H.r3 + 1.0, -971.6, 'brickwall', 1.4, true, { vault: true });
-    this.roofTank(6, H.r3, -980); this.roofDish(-6.5, H.r3, -966);
+    this.roofTank(6, H.r3, -978.5); this.roofDish(-6.5, H.r3, -969.5);
     // R5: tanks, dishes, pigeons, the view
-    for (const [x, z] of [[-6, -1008], [6.5, -1016], [-5.5, -1027], [5, -1034]]) this.roofTank(x, H.r5, z);
+    for (const [x, z] of [[-6, -1008], [6.5, -1019.5], [-5.5, -1027], [5, -1034]]) this.roofTank(x, H.r5, z);
     for (const [x, z] of [[7, -1005], [-7.5, -1019], [7.5, -1029]]) this.roofDish(x, H.r5, z);
     this.coop(0, H.r5, -1021.5);
-    this.spawns.pigeonsR5 = [[0, H.r5 + 1.9, -1021.5], [-6, H.r5 + 2.1, -1008], [6.5, H.r5 + 2.1, -1016], [-2, H.r5 + 0.05, -1012]];
+    this.spawns.pigeonsR5 = [[0, H.r5 + 1.9, -1021.5], [-6, H.r5 + 2.1, -1008], [6.5, H.r5 + 2.1, -1019.5], [-2, H.r5 + 0.05, -1009]];
     // descent: awning slab then the corniche
     this.paintBox(-6, 3.4, -1046, 6, 3.6, -1040, C.concrete, true, { kind: 'awning' });
     this.B.quad('khay', [[-6, 3.62, -1040], [6, 3.62, -1040], [6, 3.62, -1046], [-6, 3.62, -1046]], [[0, 0], [3, 0], [3, 1.5], [0, 1.5]]);

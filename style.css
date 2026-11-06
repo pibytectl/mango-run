@@ -278,6 +278,14 @@ body.mode3d:not(.cut3d) #subs3d { bottom: calc(max(8px, var(--safe-b)) + 2px); m
 .ehp i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff7a3a, #ffd36a); transition: width .15s; }
 .ehp.warn { border-color: #ff6a2a; box-shadow: 0 0 10px rgba(255, 100, 40, 0.9); }
 
+/* round 4: how far ahead the thief is (market and tok-tok chase) */
+.tpill { position: absolute; transform: translate(-50%, -100%); padding: 2px 9px; border-radius: 10px; font: 800 13px CairoGame, sans-serif; direction: rtl; white-space: nowrap;
+  background: rgba(30, 14, 6, 0.72); border: 1px solid rgba(255, 220, 160, 0.6); color: #ffe7b0; pointer-events: none; z-index: 3; }
+.tpill.far { border-color: #ff8a3a; color: #ffb36a; }
+.tpill.hot { background: rgba(160, 30, 10, 0.85); border-color: #ffd36a; color: #fff; animation: hintPulse 0.5s infinite; }
+.tpill.hidden { display: none; }
+.ehp.warn.red { border-color: #ff1a1a; box-shadow: 0 0 12px rgba(255, 30, 30, 0.95); }
+
 .slot.gain { animation: pop .35s; }
 
 /* end screen extras */

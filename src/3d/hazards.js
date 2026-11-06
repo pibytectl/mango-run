@@ -1,4 +1,5 @@
 // Round 3 difficulty (Andy: "too easy, it needs to be a bit harder"): moving hazards that cost hearts.
+// Round 4 (Andy: "still not difficult"): every hit costs a whole heart and spills mangoes (game3d.hazardHit).
 //   carts:   donkey carts loaded with greens (from Mzee's alley photos) that cross the street or work up and down a
 //            market lane on a fixed back-and-forth beat: a hit is a heart and a mango out of the crate.
 //   buckets: a neighbour empties a bucket of water from a balcony: a wet ring on the ground marks the spot for
@@ -119,8 +120,7 @@ export class Hazards {
       if (c.hit <= 0 && p.y < 1.3 && h.state !== 'vault' && this.cartHits(c, p, 0.3)) {
         c.hit = 1.6;
         const yaw = c.root.rotation.y;
-        g.hurt(2, c.pos.x - Math.sin(yaw) * 0.2, c.pos.z - Math.cos(yaw) * 0.2, true);
-        g.dropMango(p.x, p.y + 1.6, p.z);
+        g.hazardHit(c.pos.x - Math.sin(yaw) * 0.2, c.pos.z - Math.cos(yaw) * 0.2, 2);
         g.fx.emit(p.x, 0.5, p.z, 12, { speed: 3, up: 1.5 });
         g.log('cart hit', { hp: g.hp, z: Math.round(p.z) });
         g.hint('cart', { ar: 'خلّي بالك من عربيات الكارو!', en: 'Watch out for the donkey carts!' }, 2);
@@ -137,7 +137,8 @@ export class Hazards {
         g.fx.emit(b.x, 0.1, b.z, 16, { color: 0xbfe6ff, speed: 3.2, up: 1.4, life: 0.5, size: 0.12, alpha: 0.8 });
         g.sfxSplash && g.sfxSplash();
         if (Math.hypot(p.x - b.x, p.z - b.z) < b.r && p.y < 1.5) {
-          g.hurt(1, b.x, b.z, false);
+          // round 4: a whole heart and a mango (was half a heart)
+          g.hazardHit(b.x, b.z, 1, false);
           h.body.vel.x *= 0.3; h.body.vel.z *= 0.3;
           g.log('bucket hit', { hp: g.hp, z: Math.round(p.z) });
         }

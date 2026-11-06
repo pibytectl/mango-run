@@ -77,7 +77,7 @@ export class Hero {
 
   // ------------------------------------------------------------------ main update
   update(dt, I, camYaw) {
-    this.st += dt; this.iframes = Math.max(0, this.iframes - dt);
+    this.st += dt; this.iframes = Math.max(0, this.iframes - dt); this.slowT = Math.max(0, (this.slowT || 0) - dt);
     if (this.cine || this.ride) { this.anim.update(dt); this.sync(); return; }
     const b = this.body;
     // desired move direction in world space
@@ -133,6 +133,7 @@ export class Hero {
     let top = mag < 0.55 ? SPD.walk + (SPD.run - SPD.walk) * Math.max(0, (mag - 0.25) / 0.3) : SPD.run;
     if (this.sprinting) top = SPD.sprint;
     if (this.carry && !this.sprinting) top *= 0.97;
+    if (this.slowT > 0) top *= 0.3;   // round 4: shouldered into a shopper, he stumbles for a moment
     const tx = mx * top * (mag > 0.05 ? 1 : 0), tz = mz * top * (mag > 0.05 ? 1 : 0);
     const acc = b.onGround ? (mag > 0.05 ? SPD.accel : SPD.decel) : SPD.air;
     const dx = tx - b.vel.x, dz = tz - b.vel.z, dl = Math.hypot(dx, dz), mxd = acc * dt;
@@ -458,8 +459,10 @@ export class Hero {
     this.gravity(dt); moveBody(this.phys, b, dt);
     if (this.st > 0.48) this.setState('move');
   }
+  // a shoulder bump in a crowd: no damage, most of his speed gone for a moment
+  stumble(dur = 0.5) { if (this.state !== 'move') return false; this.slowT = dur; this.body.vel.x *= 0.3; this.body.vel.z *= 0.3; return true; }
   // returns 'dodged' | 'blocked' | 'hit' | 'down'
-  takeHit(dmg, fx, fz, heavy) {
+  takeHit(dmg, fx, fz, heavy, knock = false) {
     const b = this.body;
     if (this.state === 'down' || this.state === 'getup' || this.iframes > 0) return 'dodged';
     const dx = fx - b.pos.x, dz = fz - b.pos.z, d = Math.hypot(dx, dz) || 1;
@@ -469,7 +472,7 @@ export class Hero {
       return 'blocked';
     }
     this.combo = -1; b.h = 1.75; this.modelOff.set(0, 0, 0);
-    if (heavy) {
+    if (heavy || knock) {
       this.setState('down'); this.anim.play('knockdown', { fade: 0.05, speed: 1.2 });
       b.vel.set(-dx / d * 7, 3.5, -dz / d * 7); b.onGround = false; this.iframes = 2.2;
       this.yaw = Math.atan2(dx, dz);

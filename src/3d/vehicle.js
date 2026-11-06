@@ -5,6 +5,7 @@ import { A } from './assets3d.js';
 import { mergeGeometries } from '../../vendor/addons/BufferGeometryUtils.js';
 
 const MAXV = 12.5, BOOSTV = 17.5, ACC = 6.5, STEER = 1.9;
+export const ESCAPE_GAP = 42, END_GAP = 24;
 export const TOK_LEN = 2.7, TOK_WID = 1.36;
 
 // Tok-tok (round 2, from Mzee's photos): built in code instead of the boxy generated model. Bajaj-style
@@ -174,8 +175,8 @@ export class Chase {
     this.traffic = [];
     const R = this.g.level.R;
     const tints = [null, 0x88ccaa, 0xffc87a, 0xb0a0ff, 0xff9a9a];
-    // round 3: denser traffic (a vehicle every 13-24 m, was 17-32) and more slow carts
-    for (let s = 55; s < this.road.len - 60; s += 13 + R() * 11) {
+    // round 3: denser traffic (a vehicle every 13-24 m, was 17-32) and more slow carts; round 4: every 12-21 m
+    for (let s = 55; s < this.road.len - 60; s += 12 + R() * 9) {
       const onc = R() < 0.42;
       const kind = R() < 0.24 ? 'cart' : 'tok';
       const t = { s, d: onc ? -2.4 - R() * 2.2 : 1.6 + R() * 3, v: onc ? -(6 + R() * 4) : (kind === 'cart' ? 1.5 : 5 + R() * 4), kind, len: kind === 'cart' ? 2.4 : TOK_LEN, wid: kind === 'cart' ? 1.2 : TOK_WID };
@@ -233,8 +234,10 @@ export class Chase {
     // rubber band: ahead he cruises a touch under your top speed; up close he floors it, so the boost is
     // what lets you ram him
     // round 3: less waiting for a slow driver (was 0.92 / 0.78 far / 0.86 / 1.04 close)
-    let want = MAXV * 0.96;
-    if (gap > 30) want = MAXV * 0.86; else if (gap > 20) want = MAXV * 0.91; else if (gap < 6) want = MAXV * 1.08;
+    // round 4: no waiting at all: he cruises just under Radwan's top speed however far ahead he is, so every
+    // crash is metres he never gives back and the boost is the only way to close up
+    let want = MAXV * 0.97;
+    if (gap < 6) want = MAXV * 1.08;
     if (T.s > this.road.len - 60) want = Math.min(want, MAXV * 0.9);
     // brake check: with Radwan right on his tail in the same lane he stamps on the brake for half a second; a
     // straight rear-end is a crash for Radwan, the ram has to come from the side
@@ -296,10 +299,11 @@ export class Chase {
     this.place(P); this.place(T);
     // escape check / end
     // round 3: the gap matters (was: escaped after 4 s beyond 75 m, caught at the end within 45 m)
-    if (gap > 55) this.escapeT += dt; else this.escapeT = 0;
+    // round 4: escaped after 2.5 s beyond 42 m, and he has to be within 24 m when he reaches the alley
+    if (gap > ESCAPE_GAP) this.escapeT += dt; else this.escapeT = Math.max(0, this.escapeT - dt);
     this.gapNow = gap;
-    if (this.escapeT > 3) { this.ended = true; g.onChase('escaped'); }
-    else if (T.s > this.road.len - 34 && !this.ended) { this.ended = true; g.onChase(gap < 32 ? 'end' : 'escaped'); }
+    if (this.escapeT > 2.5) { this.ended = true; g.onChase('escaped'); }
+    else if (T.s > this.road.len - 34 && !this.ended) { this.ended = true; g.onChase(gap < END_GAP ? 'end' : 'escaped'); }
   }
   // world position helper for seats
   seat(o, fwd, up, side = 0) {

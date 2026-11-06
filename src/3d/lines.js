@@ -37,6 +37,7 @@ export const LINES = {
   r2: { who: 'radwan', ar: 'ولا يهمّك!', en: 'No problem!', tts: 'وَلا يِهِمَّك!' },
   r3: { who: 'radwan', ar: 'آه يا ضهري... يا ساتر!', en: 'Oof, my back... good grief!', tts: 'آه يا ضَهْري... يا ساتِر!' },
   r4: { who: 'radwan', ar: 'المانجا! حاسب على المانجا!', en: 'The mangoes! Mind the mangoes!', tts: '[shouting] المانجا! حاسب على المانجا!' },
+  r5: { who: 'radwan', ar: 'لا مؤاخذة يا جماعة! عدّوني!', en: 'Sorry, folks! Let me through!', tts: '[out of breath] لا مُؤاخْذة يا جَماعة! عَدّوني!' },
 
   // ---- the snatch and the foot chase
   m1: { who: 'vendor', ar: 'مانجا صعيدي؟ يا حلاوتها يا حاج!', en: 'Mangoes from the South? Beautiful, Hajj!', tts: 'مانْجا صَعيدي؟ يا حَلاوِتْها يا حاجّ!' },
@@ -47,6 +48,7 @@ export const LINES = {
   c2: { who: 'thief', ar: 'آه! خلاص خلاص، خد واحدة!', en: 'Ow! Fine, fine, have one back!', tts: '[pained] آه! خلاص خلاص، خد واحدة!' },
   c3: { who: 'thief', ar: 'وسّعوا! وسّعوا!', en: 'Out of the way! Move!', tts: '[shouting] وسّعوا! وسّعوا!' },
   c4: { who: 'radwan', ar: 'رجّع المانجا يا ولد!', en: 'Give back the mangoes, boy!', tts: '[shouting] رَجَّع المانْجا يا وَلَد!' },
+  c6: { who: 'thief', ar: 'حرامي! حرامي! الحقوا الراجل ده!', en: 'Thief! Thief! Stop that man!', tts: '[shouting] حَرامي! حَرامي! اِلْحَقوا الرّاجِل دَه!' },
   c5: { who: 'radwan', ar: 'لا مؤاخذة يا ستّ المعزة، عدّيني بس!', en: 'Pardon me, madam goat, just let me through!', tts: 'لا مُؤاخْذة يا سِتّ المِعْزة، عَدّيني بَسّ!' },
 
   // ---- the tok-tok chase
@@ -67,12 +69,15 @@ export const LINES = {
   f6: { who: 'buddy', ar: 'آه يا دماغي!', en: 'Ow, my head!', tts: '[pained] آه يا دِماغي!' },
   f7: { who: 'buddy', ar: 'امسكه! امسكه من ورا!', en: 'Grab him! From behind!', tts: '[shouting] امسكه! امسكه من ورا!' },
   f8: { who: 'thief', ar: 'خلاص يا حاج، إحنا آسفين! خد المانجا وروّح.', en: 'Enough, Hajj, we\'re sorry! Take the mangoes and go.', tts: '[out of breath] خلاص يا حاج، إحنا آسفين! خد المانجا وروّح.' },
+  f10: { who: 'buddy', ar: 'استلقى وعدك يا عم!', en: 'Here\'s what\'s coming to you!', tts: '[shouting] اِسْتَلَقّى وَعْدَك يا عَمّ!' },
   f9: { who: 'radwan', ar: 'ربنا يهديكم. الشغل الحلال أحلى.', en: 'May God guide you. Honest work tastes sweeter.' },
 
   // ---- the rooftops
   u1: { who: 'radwan', ar: 'السطوح أقصر سكة للنيل... يا رب سترك.', en: 'The rooftops are the shortest way to the Nile... Lord, keep me safe.' },
   u2: { who: 'radwan', ar: 'الحمامة البيضا دي ناوية على حاجة... بعدين نتحاسب.', en: 'That white pigeon is up to something... we\'ll settle it later.' },
   u3: { who: 'radwan', ar: 'يا ساتر يا رب!', en: 'Lord, protect us!', tts: '[shouting] يا ساتر يا رب!' },
+  u4: { who: 'radwan', ar: 'يا خبر! الحتة دي بتقع!', en: 'Oh no! This bit is giving way!', tts: '[shouting] يا خَبَر! الحِتّة دي بِتُقَع!' },
+  u5: { who: 'radwan', ar: 'الله! شوية مية ساقعة... ربنا يكرم اللي سابها هنا.', en: 'Ah! Some cold water... God bless whoever left it here.', tts: 'اللَّه! شُوَيَّة مَيَّة سَاقْعَة... رَبِّنا يِكْرِم اللي سابْها هِنا.' },
 
   // ---- the jetty and the finale
   j1: { who: 'captain', ar: 'يلا يا حاج! آخر نقلة قبل المغرب!', en: 'Come on, Hajj! Last crossing before sunset!', tts: '[shouting] يَلّا يا حاجّ! آخِر نَقْلة قَبْل المَغْرِب!' },
@@ -82,4 +87,5 @@ export const LINES = {
   j5: { who: 'radwan', ar: 'الحمد لله، وصلنا. والعريس هيسامحنا على اللي ناقص.', en: 'Thank God, we made it. The groom will forgive us the missing ones.' },
   j6: { who: 'captain', ar: 'بس خلّي بالك يا حاج... الحمامة البيضا دي واقفة على المعدية من الصبح.', en: 'But watch out, Hajj... that white pigeon has been sitting on the ferry since this morning.', tts: 'بَسّ خَلّي بالَك يا حاجّ... الحَمامة البيْضا دي واقْفة على الْمِعَدِّيَّة مِن الصُّبْح.' },
   x1: { who: 'radwan', ar: 'هرب مني... لا، مش هسيبه!', en: 'He got away... no, I won\'t let him!' },
+  x2: { who: 'radwan', ar: 'راح فين ده؟ ضاع مني في الزحمة!', en: 'Where did he go? I lost him in the crowd!', tts: 'راح فين دَه؟ ضاع مِنّي في الزَّحْمة!' },
 };

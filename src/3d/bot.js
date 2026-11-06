@@ -3,11 +3,14 @@
 // directly, except a logged nudge if it is stuck for several seconds.
 const W = (x, z, o = {}) => ({ x, z, ...o });
 // rooftop route (from the alley to the corniche): act = action when this waypoint is reached
+// round 4: the water jug (only when hurt), the crumbling cornice with its missing piece (a hop), the plank gap
+// (wait for the plank), the light well's tin sheets (sprint over)
 const ROOF_ROUTE = [
   W(-1.5, -906), W(-3.9, -910.5), W(-3.9, -912.4), W(-3.9, -914.3, { jumpAt: 1.0 }), W(-3.6, -915.6, { jumpAt: 0.9 }), W(-3.0, -917.2), W(-2.8, -919.5),
-  W(0, -925), W(0, -936, { sprint: true }), W(0, -940.3, { jump: true, sprint: true }), W(0, -955.5, { sprint: true }),
-  W(0, -963, { sprint: true }), W(0, -970, { sprint: true }), W(0, -976, { sprint: true }), W(0, -985.2, { jump: true, sprint: true }), W(0, -990, { sprint: true }),
-  W(0.4, -996.2), W(-0.6, -996.6, { wall: true }), W(2.6, -997.0), W(2.6, -1002.5), W(2.6, -1012), W(2.6, -1031), W(0, -1037, { sprint: true }), W(0, -1043.5, { sprint: true }),
+  W(-3.2, -923.5, { jug: true }), W(0, -927), W(0, -936, { sprint: true }), W(0, -940.3, { jump: true, sprint: true }), W(0.2, -949, { sprint: true }),
+  W(0.2, -954.5, { sprint: true }), W(0.2, -960.4, { jump: true, sprint: true }), W(0.2, -966.6, { sprint: true }), W(0, -970, { sprint: true }), W(0, -976, { sprint: true }),
+  W(0, -979.6, { plank: true }), W(0, -991, { sprint: true }),
+  W(0.4, -996.2), W(-0.6, -996.6, { wall: true }), W(2.6, -997.0), W(2.6, -1002.5), W(2.6, -1009, { sprint: true }), W(2.6, -1019, { sprint: true }), W(2.6, -1031), W(0, -1037, { sprint: true }), W(0, -1043.5, { sprint: true }),
   W(0, -1050), W(0, -1056),
 ];
 
@@ -77,7 +80,17 @@ export class Bot {
     let gx = d < 4 && this.mi >= R.i - 1 ? T.pos.x : w.x, gz = d < 4 && this.mi >= R.i - 1 ? T.pos.z : w.z;
     // donkey carts in the lane ahead: keep to the far side of the lane
     for (const c of g.haz.carts) if (Math.abs(c.pos.x - p.x) < 1.9 && Math.abs(c.pos.z - p.z) < 6) gx = c.pos.x + (c.pos.x > p.x ? -1.75 : 1.75);
+    // round 4: shoppers in the lane ahead: pass on the side with more room
+    for (const c of g.crowd || []) {
+      const n = c.n.pos, ahead = p.z - n.z;
+      if (ahead > -0.5 && ahead < 4.5 && Math.abs(n.x - gx) < 1.0) gx = n.x + (n.x > c.lane ? -1.15 : 1.15);
+    }
     this.go(gx, gz, true);
+    // a low cloth across the crossing ahead: slide under it
+    for (const c of g.level.cloths || []) {
+      const ax = c.x - p.x;
+      if (Math.abs(p.z - c.z) < 1.9 && Math.abs(ax) > 1.0 && Math.abs(ax) < 2.8 && h.body.vel.x * ax > 2 && h.state === 'move') this.press('slide');
+    }
     if (d < 2.3 && R.stun <= -0.9 && this.t - this.atkT > 0.35) { this.atkT = this.t; this.press('attack'); }
   }
   chase() {
@@ -101,17 +114,26 @@ export class Bot {
     if (!foes.length) { this.inp.world = { x: 0, z: 0 }; return; }
     let tgt = null, td = 1e9;
     for (const f of foes) { const d = f.pos.distanceTo(p); if (d < td) { td = d; tgt = f; } }
-    const threat = foes.find((f) => (f.state === 'windup' && f.t > 0.25) || (f.state === 'punch' && f.t < 0.45)) ;
-    if (threat && threat.pos.distanceTo(p) < 2.4 && h.state !== 'attack') {
-      // round 3: thugs circle to his back; a block only covers the front, so one from behind gets a dodge away
-      const tx = threat.pos.x - p.x, tz = threat.pos.z - p.z, td2 = Math.hypot(tx, tz) || 1;
-      const front = (tx * Math.sin(h.yaw) + tz * Math.cos(h.yaw)) / td2 > 0.25;
-      const late = (threat.state === 'windup' && threat.t > (threat.windup || 0.55) - 0.12) || threat.state === 'punch';
-      if (!front && late && h.state !== 'dodge' && this.t - (this.dodgeT || 0) > 0.7) { this.dodgeT = this.t; this.inp.world = { x: -tx / td2, z: -tz / td2 }; this.press('slide'); return; }
-      this.inp.blockHeld = front || !late; this.inp.world = { x: 0, z: 0 }; return;
+    // round 4: two can come at once (one from behind), combos run to 1.25 s, a RED heavy cannot be blocked
+    const live = (f) => (f.state === 'windup' && f.t > (f.windup || 0.55) - 0.4) || (f.state === 'punch' && f.t < (f.kind === 'combo3' ? 0.95 : f.kind === 'heavy' ? 0.3 : 0.6));
+    const threats = foes.filter((f) => live(f) && f.pos.distanceTo(p) < (f.kind === 'heavy' ? 3.0 : 2.5));
+    // mid-swing he can still dodge or block once the swing has landed (the hero cancels after the impact frame)
+    const canAct = h.state !== 'attack' || h.hitDone;
+    if (threats.length && canAct) {
+      const front = (f) => { const tx = f.pos.x - p.x, tz = f.pos.z - p.z; return (tx * Math.sin(h.yaw) + tz * Math.cos(h.yaw)) / (Math.hypot(tx, tz) || 1) > 0.3; };
+      const mustDodge = threats.some((f) => f.kind === 'heavy' || !front(f)) || threats.length > 1;
+      const late = threats.some((f) => (f.state === 'windup' && f.t > (f.windup || 0.55) - (f.kind === 'heavy' ? 0.06 : 0.13)) || (f.state === 'punch' && (f.kind !== 'combo3' || f.t > 0.7)));
+      if (mustDodge && late && h.state !== 'dodge' && this.t - (this.dodgeT || 0) > 0.5) {
+        let ax = 0, az = 0; for (const f of threats) { const dx = p.x - f.pos.x, dz = p.z - f.pos.z, d = Math.hypot(dx, dz) || 1; ax += dx / d; az += dz / d; }
+        const al = Math.hypot(ax, az); const dir = al > 0.3 ? { x: ax / al, z: az / al } : { x: Math.cos(h.yaw), z: -Math.sin(h.yaw) };
+        this.dodgeT = this.t; this.inp.world = dir; this.press('slide'); return;
+      }
+      this.inp.blockHeld = !mustDodge || threats.every(front); this.inp.world = { x: 0, z: 0 }; return;
     }
+    // never start a swing while someone close is already winding up (they are armoured past the first 20%)
+    const winding = foes.some((f) => f.state === 'windup' && f.t > 0.08 && f.pos.distanceTo(p) < 2.8);
     if (td > 1.9) this.go(tgt.pos.x, tgt.pos.z, false);
-    else { this.inp.world = { x: 0, z: 0 }; if (this.t - this.atkT > 0.18) { this.atkT = this.t; this.press('attack'); } }
+    else { this.inp.world = { x: 0, z: 0 }; if (!winding && this.t - this.atkT > 0.18) { this.atkT = this.t; this.press('attack'); } }
   }
   roofs() {
     const g = this.g, h = g.hero, p = h.pos;
@@ -124,7 +146,13 @@ export class Bot {
     // back on the alley floor (respawn or a slip): start the climb route again
     if (p.y < 0.3 && p.z > -918 && this.ri > 4) { this.ri = 0; this.wallStep = 0; }
     const w = ROOF_ROUTE[this.ri];
+    if (w.jug && (g.jugTaken || g.hp >= 6)) { this.ri++; return; }
     if (w.wall) return this.wallJump(w);
+    if (w.plank) {
+      const d = this.go(w.x, w.z, false);
+      if (d < 0.6) { this.inp.world = { x: 0, z: 0 }; if (g.traps.plankHoldLeft() > 1.0) this.ri++; }
+      return;
+    }
     const d = this.go(w.x, w.z, !!w.sprint);
     for (const L of g.level.laundry) if (p.z - L.z > 1.0 && p.z - L.z < 3.2 && L.bottom > p.y && L.bottom < p.y + 1.7 && h.state === 'move') { this.inp.sprint = true; this.press('slide'); }
     if (w.jumpAt && d < w.jumpAt && h.body.onGround) { this.press('jump'); this.inp.jumpHeld = true; }
