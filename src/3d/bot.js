@@ -43,6 +43,7 @@ export class Bot {
     I.blockHeld = false; I.jumpHeld = I.jumpHeld && h.state === 'air';
     const seg = g.seg;
     if (g.m2) this.mission2(dt);
+    else if (g.m3) this.mission3(dt);
     else if (seg === 'street') this.street(dt);
     else if (seg === 'market') this.market(dt);
     else if (seg === 'chase') this.chase(dt);
@@ -50,7 +51,7 @@ export class Bot {
     else if (seg === 'roofs') this.roofs(dt);
     else if (seg === 'jetty') this.jetty(dt);
     // stuck detection (on foot)
-    if (seg !== 'chase' && seg !== 'fight') {
+    if (seg !== 'chase' && seg !== 'fight' && seg !== 'd4') {
       const p = h.pos;
       if (this.lastPos && Math.hypot(p.x - this.lastPos.x, p.z - this.lastPos.z) < 0.02 && (I.world && Math.hypot(I.world.x, I.world.z) > 0.5)) this.stuckT += dt; else this.stuckT = 0;
       this.lastPos = { x: p.x, z: p.z };
@@ -123,12 +124,14 @@ export class Bot {
     if (P.boost < 4 || gap < 0.5) this.boosting = false;
     I.boost = !!this.boosting;
   }
-  fight() {
+  fight(force) {
     const g = this.g, h = g.hero, p = h.pos;
     const foes = g.fight.list.filter((f) => !f.ko);
     if (!foes.length) { this.inp.world = { x: 0, z: 0 }; return; }
     let tgt = null, td = 1e9;
     for (const f of foes) { const d = f.pos.distanceTo(p); if (d < td) { td = d; tgt = f; } }
+    // Mission 3: a thug on his way to smash the kiosk comes first
+    if (force && !force.ko) { tgt = force; td = force.pos.distanceTo(p); }
     // round 4: two can come at once (one from behind), combos run to 1.25 s, a RED heavy cannot be blocked
     const live = (f) => (f.state === 'windup' && f.t > (f.windup || 0.55) - 0.4) || (f.state === 'punch' && f.t < (f.kind === 'combo3' ? 0.95 : f.kind === 'heavy' ? 0.3 : 0.6));
     const threats = foes.filter((f) => live(f) && f.pos.distanceTo(p) < (f.kind === 'heavy' ? 3.0 : 2.5));
@@ -267,5 +270,122 @@ export class Bot {
     const g = this.g, h = g.hero, p = h.pos, L = g.level.spawns;
     this.go(0, L.jettyEnd - 20, true);
     if (p.z < L.jettyEnd + 1.3 && p.z > L.jettyEnd - 0.5 && h.body.onGround) { this.press('jump'); this.inp.jumpHeld = true; }
+  }
+  // ---------------------------------------------------------------- Mission 3
+  mission3(dt) {
+    const g = this.g, M = g.m3, I = this.inp;
+    I.sprint = false;
+    if (g.mode !== 'play') { I.world = { x: 0, z: 0 }; return; }
+    const day = g.seg;
+    if (day === 'd1' || day === 'd5') this.m3shop();
+    else if (day === 'd2') this.m3gas();
+    else if (day === 'd3') this.m3chase();
+    else if (day === 'd4') this.fight(M.raid && M.raid.f);
+    void dt;
+  }
+  // press the action button with a short cooldown
+  act(k = 'attack', cd = 0.35) { if (this.t - (this.actT || 0) > cd) { this.actT = this.t; this.press(k); } }
+  // walk/run toward (x, z), but never step into the tok-tok lane with one coming
+  m3go(x, z, sprint) {
+    const g = this.g, p = g.hero.pos, lane = g.m3.M.tokLane;
+    const inBand = (px) => px > lane - 1.75 && px < lane + 1.75;
+    const crossing = inBand(p.x) || (p.x - lane) * (x - lane) < 0;
+    if (crossing && p.y < 0.5) {
+      for (const t of g.streetToks) {
+        if (t.vx) continue;
+        const rel = t.z - p.z, coming = (t.vz > 0 && rel < 1.5 && rel > -13) || (t.vz < 0 && rel > -1.5 && rel < 13);
+        if (!coming) continue;
+        if (inBand(p.x)) { this.go(p.x < lane ? lane - 2.6 : lane + 2.6, p.z, true); return 9; }
+        this.inp.world = { x: 0, z: 0 }; return 9;
+      }
+    }
+    return this.go(x, z, sprint);
+  }
+  // the way up to a raised spot (door A's landing, the shed roofs for door C, the roof room for door B)
+  m3route(t) {
+    const g = this.g, p = g.hero.pos;
+    if (t.y > 2.5 && t.x < -3 && t.z < -914 && t.z > -919) {           // A: the outdoor stair
+      if (p.y < 0.3 && p.z > -911.7) return this.m3go(-4.55, -911.3, true) < 0.6 ? this.go(-4.55, -917, false) : 9;
+      return this.go(t.x, t.z, false);
+    }
+    if (t.y > 2.5 && t.x > 8) {                                         // C: the shed stair, the roof, the plank
+      if (p.y < 0.3 && p.z > -941.5) { const d = p.x < 4.6 ? this.m3go(4.8, -941.7, true) : this.go(6.15, -942.6, false); return d + 20; }
+      if (p.y < 3.4) return this.go(6.15, -947.2, false) + 15;
+      if (p.z > -950.4) { const d = this.go(10.05, -950.6, false); if (d > 0.35 || Math.abs(p.x - 10.05) > 0.2) return d + 10; }
+      if (p.z > -957.2) return this.go(10.05, -957.6, false) + 2;
+      return this.go(t.x, t.z, false);
+    }
+    if (t.y > 2.5 && t.x < -12) {                                        // B: the courtyard stair
+      if (p.x > -6.2) return this.m3go(-6.5, -939.4, true) + 15;
+      return this.go(t.x, -939.5, false);
+    }
+    return this.m3go(t.x, t.z, true);
+  }
+  m3shop() {
+    const g = this.g, M = g.m3, S = M.M, h = g.hero, p = h.pos, N = M.night, R = M.rush;
+    const st = (k) => S.stations[k];
+    const near = (q, r) => Math.hypot(q.x - p.x, q.z - p.z) < r && Math.abs(q.y - p.y) < 0.8;
+    // the neighbours in the blackout: deliver what is in hand, fetch for the most urgent
+    const reqs = N ? N.reqs.filter((r) => r.state === 'on') : [];
+    const forHand = reqs.find((r) => r.item === M.hold);
+    if (forHand) { this.m3route(forHand.at); return; }
+    const urgent = reqs.sort((a, b) => a.pat - b.pat).find((r) => r.pat < (N.genOn ? 9 : 24) && !(N.genOn && M.front() && M.hold && M.front().want.includes(M.hold)));
+    if (urgent) { if (near(st(urgent.item), 0.9)) { this.inp.world = { x: 0, z: 0 }; this.act(); } else this.m3go(st(urgent.item).x, st(urgent.item).z, true); return; }
+    if (N && !N.genOn) {
+      const gp = S.gen;
+      if (this.m3go(gp.x - 0.3, gp.z, true) < 0.9) {
+        this.inp.world = { x: 0, z: 0 };
+        const lo = 0.7 + N.pulls * 0.05;
+        if (N.lock <= 0 && N.needle > lo + 0.03 && N.needle < 0.87) this.act('attack', 0.4);
+      }
+      return;
+    }
+    if (!R) { this.m3go(1.8, -899.5, false); return; }
+    const f = M.front();
+    if (!f) { if (this.m3go(1.6, -900.6, false) < 0.3) this.inp.world = { x: 0, z: 0 }; return; }
+    const need = f.want.find((w) => !f.got.includes(w));
+    if (M.hold === need) {
+      if (this.m3go(S.counter.x - 0.4, S.counter.z - 0.6, true) < 1.0) { this.inp.world = { x: 0, z: 0 }; this.act(); }
+    } else if (near(st(need), 0.85)) { this.inp.world = { x: 0, z: 0 }; this.act(); }
+    else this.m3go(st(need).x, st(need).z, true);
+  }
+  m3gas() {
+    const g = this.g, M = g.m3, S = M.M, D = M.d2, h = g.hero, p = h.pos, dog = M.dog, I = this.inp;
+    if (!D) { I.world = { x: 0, z: 0 }; return; }
+    const door = S.doors[D.i];
+    const dogUp = dog.root.visible && dog.state !== 'sleep' && dog.state !== 'stun' && dog.state !== 'back';
+    const dd = Math.hypot(dog.pos.x - p.x, dog.pos.z - p.z);
+    // door B: put the cylinder down out of the dog's reach, whack the dog, pick it up, run for the stair
+    if (door.id === 'B' && p.y < 0.5) {
+      if (M.hold === 'cyl' && dog.state !== 'stun' && p.x < -1.6) { if (this.go(-2.8, -934.5, false) < 0.4) { I.world = { x: 0, z: 0 }; this.act(); } return; }
+      if (!M.hold && M.cylWorld.visible && dog.state !== 'stun' && Math.hypot(M.cylWorld.position.x + 2.8, M.cylWorld.position.z + 934.5) < 1.5) {
+        if (dogUp || dd < 8) {
+          if (dog.state === 'growl' && dd < 3) { I.world = { x: 0, z: 0 }; I.blockHeld = true; return; }
+          if (dd > 1.6) this.go(dog.pos.x, dog.pos.z, false); else { I.world = { x: 0, z: 0 }; this.act('attack', 0.3); }
+          return;
+        }
+        this.go(-4.4, -935.4, false); return;   // wake it
+      }
+    }
+    if (M.hold === 'cyl') { const d = this.m3route(door.p); if (d < 0.3) I.world = { x: 0, z: 0 }; return; }
+    if (M.cylWorld.visible) { const c = M.cylWorld.position; if (this.m3go(c.x, c.z, true) < 0.8) { I.world = { x: 0, z: 0 }; this.act(); } return; }
+    if (p.y > 0.5) { this.go(p.x < -8 ? -10 : p.x > 6 ? 6.1 : -4.5, p.x < -8 ? -939.5 : p.x > 6 ? -941 : -911, false); if (p.x > 6 && p.z < -947) this.go(6.15, -946.5, false); return; }
+    if (this.m3go(S.rack.x - 0.6, S.rack.z, true) < 0.9) { I.world = { x: 0, z: 0 }; this.act(); }
+  }
+  m3chase() {
+    const g = this.g, M = g.m3, C = M.chase, h = g.hero, p = h.pos, I = this.inp;
+    if (!C) { I.world = { x: 0, z: 0 }; return; }
+    const k = M.kid, gap = Math.hypot(k.pos.x - p.x, k.pos.z - p.z);
+    const RT = [W(0.6, -914), W(0.2, -926), W(-0.6, -934), W(1.2, -950), W(0, -962), W(0, -969.5), W(1.6, -972.5), W(0, -978), W(0, -984), W(0.2, -993.6),
+      W(0.3, -995.3, { jumpAt: 1.1 }), W(0.2, -996.9), W(0.1, -997.0, { jumpAt: 0.9 }), W(0, -998.3, { jumpAt: 0.9 }), W(0, -1005.6), W(0, -1006.7, { jump: true }), W(0, -1013), W(0, -1019.5), W(0, -1034)];
+    this.ci = this.ci || 0;
+    while (this.ci < RT.length - 1 && RT[this.ci].z > p.z + 0.3 && !RT[this.ci].jumpAt && !RT[this.ci].jump) this.ci++;
+    const w = RT[this.ci];
+    const d = this.go(gap < 6 && Math.abs(k.pos.y - p.y) < 0.8 ? k.pos.x : w.x, w.z, true);
+    for (const L of g.level.laundry) if (p.z - L.z > 1.0 && p.z - L.z < 3.2 && L.bottom > p.y && L.bottom < p.y + 1.7 && h.state === 'move') this.press('slide');
+    if (w.jumpAt && d < w.jumpAt && h.body.onGround && this.t - (this.jt || 0) > 0.5) { this.jt = this.t; this.press('jump'); I.jumpHeld = true; }
+    if (w.jump && d < 0.8 && h.body.onGround) { this.press('jump'); I.jumpHeld = true; }
+    if (d < 0.7 || (w.jump && h.state === 'air') || (w.jumpAt && p.z < w.z - 0.2)) this.ci = Math.min(RT.length - 1, this.ci + 1);
+    if (gap < 2.0 && Math.abs(k.pos.y - p.y) < 1.2) this.act('attack', 0.5);
   }
 }

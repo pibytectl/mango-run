@@ -194,6 +194,8 @@ export class Fight {
           if (!f.ko && f.t > 1.4) { f.state = 'getup'; f.t = 0; n.anim.play('get_up', { fade: 0.08, speed: 1.15 }); }
           break;
         }
+        // Mission 3: a thug sent to smash the kiosk; the mission steers him (and he stays hittable: a hit stops him)
+        case 'raid': { const v = g.m3 ? g.m3.raidStep(f, dt) : null; if (v) { vx = v[0]; vz = v[1]; } break; }
         case 'getup': if (f.t > 1.15) { f.state = 'circle'; f.t = 0; f.cool = 0.4; } break;
         case 'evade': {
           b.vel.x *= Math.max(0, 1 - 5 * dt); b.vel.z *= Math.max(0, 1 - 5 * dt); vx = b.vel.x; vz = b.vel.z; faceHero();

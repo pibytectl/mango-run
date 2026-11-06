@@ -3,18 +3,18 @@
 // side-scroller and its code are gone; git history keeps them.
 //   ?debug=auto3d   a scripted player runs the whole mission (tests)
 //   ?seg3d=<seg>    start at a segment (street, market, chase, fight, roofs, roofs2, jetty; Mission 2: start, B, C, E, F, G)
-//   ?mission=2      Mission 2 (with ?debug=auto3d or ?seg3d it starts straight away; on the title it is the
-//                   pick only once Mission 1 is finished, remembered in localStorage)
+//   ?mission=2|3    Mission 2 or 3 (with ?debug=auto3d or ?seg3d it starts straight away; on the title each is
+//                   the pick only once the one before is finished, remembered in localStorage; Mission 3: ?seg3d=d1..d5)
 import * as THREE from '../vendor/three.module.min.js';
 import { UI } from './ui.js';
 import { audioInit, audioSuspend, audioWake, audioDebug, loadMusic, playMusic, setSound, soundOn, sfx } from './audio.js';
 
 const Q = new URLSearchParams(location.search);
 const DEBUG_AUTO3D = Q.get('debug') === 'auto3d';
-const Q_MISSION = Q.get('mission') === '2' ? 2 : 1;
+const Q_MISSION = ['2', '3'].includes(Q.get('mission')) ? +Q.get('mission') : 1;
 // missions unlocked (1 = only the first); storage can be blocked (private mode), then only the first
 function unlocked() { try { return Math.max(1, Math.min(3, +localStorage.getItem('saidi.unlocked') || 1)); } catch (e) { return 1; } }
-function refreshMissions() { const b = document.getElementById('btn-m2'); if (b) b.classList.toggle('locked', unlocked() < 2); }
+function refreshMissions() { for (const n of [2, 3]) { const b = document.getElementById('btn-m' + n); if (b) b.classList.toggle('locked', unlocked() < n); } }
 // A phone or tablet: the primary pointer is coarse. A touchscreen laptop has touch too, but its primary
 // pointer is fine (mouse or touchpad): it starts with mouse/keyboard controls (round 3: Mzee's laptop showed
 // the touch overlay and the mouse did nothing). The 3D mode switches with the input actually used.
@@ -93,8 +93,8 @@ for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) a
 // ---------------------------------------------------------------- buttons
 const on = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); sfx.tap(); fn(); });
 on('btn-start3d', () => start3D(1));
-on('btn-m2', () => { if (unlocked() >= 2) start3D(2); else { const b = document.getElementById('btn-m2'); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); } });
-on('btn-next', () => start3D(2));
+for (const n of [2, 3]) on('btn-m' + n, () => { if (unlocked() >= n) start3D(n); else { const b = document.getElementById('btn-m' + n); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); } });
+on('btn-next', () => start3D(Math.min(3, (+document.body.dataset.endm || 1) + 1)));
 on('btn-how', () => { ui.screen('screen-how'); });
 on('btn-how-close', () => { ui.screen('screen-title'); });
 const toggleSound = () => { setSound(!soundOn()); ui.setSoundLabel(soundOn()); localStorage.setItem('saidi.sound', soundOn() ? '1' : '0'); };

@@ -77,7 +77,7 @@ export class Dog {
         if (this.t > 0.4) { this.state = 'chase'; this.t = 0; this.cool = 1.1; }
         break;
       }
-      case 'stun': this.moveTo(this.home.x + 0.8, this.home.z, 5, dt); if (this.t > 2.5) { this.state = 'chase'; this.t = 0; this.cool = 0.6; } break;
+      case 'stun': this.moveTo(this.home.x + 0.8, this.home.z, 5, dt); if (this.t > (this.stunFor || 2.5)) { this.state = 'chase'; this.t = 0; this.cool = 0.6; } break;
       case 'back': if (this.moveTo(this.home.x + 1.0, this.home.z, 3, dt) < 0.2) { this.state = 'sleep'; this.t = 0; } if (level && dh < this.r + 2) this.state = 'chase'; break;
     }
     this.place(dt);

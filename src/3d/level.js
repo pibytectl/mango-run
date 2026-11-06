@@ -8,6 +8,7 @@ import { Builder, rng, atlasMaterial } from './builder.js';
 import { A } from './assets3d.js';
 import { donkeyCart, CART_FOOT } from './hazards.js';
 import { buildPigeonRoofs } from './level2.js';
+import { buildKioskStreet } from './level3.js';
 
 const FLOOR0 = 3.4, FLOOR = 3.2, TILE = 6.4, SHOP_W = 5.1;
 // Round 2 (pacing): the microbus stand moved 86 m down the street, so the run to the market (and the theft)
@@ -92,6 +93,19 @@ export class Level {
       this.instanced();
       this.wiresMesh();
       this.nile = makeNile(); this.nile.position.z = -70; this.root.add(this.nile);   // the course runs 70 m further west
+      return this;
+    }
+    // Mission 3: uncle Fathy's street (level3.js); his name on the kiosk banner
+    if (mission === 3) {
+      this.mats.katlas.map = kioskAtlas(A.tex.fridge.image, 'كشك عم فتحي');
+      buildKioskStreet(this);
+      this.distant();
+      this.meshes = this.B.finish(this.root);
+      for (const m of this.meshes) if (m.geometry.boundingSphere.center.z < -1300) { m.material = SILHOUETTE; m.castShadow = m.receiveShadow = false; }
+      this.instanced();
+      this.marketInstances();
+      this.wiresMesh();
+      this.nile = makeNile(); this.nile.position.z = -70; this.root.add(this.nile);
       return this;
     }
     this.ground();
@@ -1117,7 +1131,7 @@ function signCanvas() {
 // [0,768,1024,128], blue koshk banner [0,896,1024,128]. Brands are invented (Shams Cola, Nesma): the colours of
 // the cola fridges in every Cairo kiosk, no real names or logos. The bottles behind the glass are a
 // gpt-image-2 texture with plain labels.
-function kioskAtlas(fridgeImg) {
+function kioskAtlas(fridgeImg, owner = 'كشك الحاج رمضان') {
   const c = document.createElement('canvas'); c.width = c.height = 1024; const x = c.getContext('2d');
   const font = (px) => `900 ${px}px CairoGame, "Noto Naskh Arabic", sans-serif`;
   const sun = (cx, cy, r) => { x.fillStyle = '#ffcf33'; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill(); x.strokeStyle = '#ffcf33'; x.lineWidth = r * 0.22; for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283; x.beginPath(); x.moveTo(cx + Math.cos(a) * r * 1.3, cy + Math.sin(a) * r * 1.3); x.lineTo(cx + Math.cos(a) * r * 1.75, cy + Math.sin(a) * r * 1.75); x.stroke(); } };
@@ -1141,7 +1155,7 @@ function kioskAtlas(fridgeImg) {
   x.fillStyle = '#c4161c'; x.fillRect(0, 768, 1024, 128); sun(90, 832, 26); sun(934, 832, 26);
   x.font = font(70); x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.direction = 'rtl'; x.fillText('شمس كولا · اشرب ساقع', 512, 836, 760);
   x.fillStyle = '#1546a8'; x.fillRect(0, 896, 1024, 128); x.fillStyle = '#f4f4f4'; x.fillRect(0, 900, 1024, 6); x.fillRect(0, 1014, 1024, 6);
-  x.font = font(66); x.fillStyle = '#fff'; x.fillText('كشك الحاج رمضان', 512, 962, 900);
+  x.font = font(66); x.fillStyle = '#fff'; x.fillText(owner, 512, 962, 900);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return t;
 }
