@@ -35,7 +35,10 @@ export class Fight {
   constructor(game) { this.g = game; this.list = []; this.active = false; }
   start(fighters) {
     this.list = fighters; this.active = true; this.token = null; this.flank = null; this.t = 0; this.won = false; this.gap = 1.2; this.flankGap = 3;
-    for (const f of fighters) { f.state = f.late ? 'lurk' : 'approach'; f.t = 0; f.cool = 0.5 + Math.random() * 1.0; f.hp = f.maxHp; f.ko = false; f.recent = []; f.n = 0; f.kind = 'jab2'; f.npc.show(true); }
+    for (const f of fighters) { f.state = f.late ? 'lurk' : 'approach'; f.t = 0; f.cool = 0.5 + Math.random() * 1.0; f.hp = f.maxHp; f.ko = false; f.recent = []; f.n = 0; f.kind = 'jab2'; f.npc.show(true);
+      // a retry starts the fight clean: no stale punch flags, glow, knockback or knocked-down pose from the try before
+      f.hitsTaken = 0; f.re = false; f.flanked = false; f.p1 = f.p2 = f.p3 = false; f.windup = 0; f.glow.material.opacity = 0;
+      f.npc.body.vel.set(0, 0, 0); f.npc.anim.play('idle', { loop: true, fade: 0.1 }); }
   }
   // the next attack of this thug: the thief and buddyA mix in a 3-hit combo, buddyB a heavy (unblockable) swing
   nextKind(f) {
@@ -203,12 +206,14 @@ export class Fight {
           break;
         }
         case 'idle': n.locoAnim(0); break;
-        // the late pal: watches from the back of the alley (a taunt now and then) until one of the others is down
+        // the late pal: watches from the back of the alley (a taunt now and then) until joinAfter of the others are down (1;
+        // Mission 1 sets 2)
+        // (2026-11-06 easing, Andy: "the alley fights are very hard": he joined after the first)
         case 'lurk': {
           faceHero();
           if (n.anim.name === 'taunt' ? f.t > 1.95 : n.anim.name !== 'idle') n.anim.play('idle', { loop: true, fade: 0.3 });
           if (f.t > 4.5 && n.anim.actions.taunt) { f.t = 0; n.anim.play('taunt', { fade: 0.15 }); }
-          if (this.list.some((o) => o !== f && o.ko) || d < 3) { f.state = 'approach'; f.t = 0; f.cool = 1.2; g.onFight('join', f); }
+          if (this.list.filter((o) => o !== f && o.ko).length >= (f.joinAfter || 1) || d < 3) { f.state = 'approach'; f.t = 0; f.cool = 1.2; g.onFight('join', f); }
           break;
         }
       }

@@ -47,7 +47,7 @@ export class Bot {
     else if (seg === 'street') this.street(dt);
     else if (seg === 'market') this.market(dt);
     else if (seg === 'chase') this.chase(dt);
-    else if (seg === 'fight') this.fight(dt);
+    else if (seg === 'fight') this.fight();
     else if (seg === 'roofs') this.roofs(dt);
     else if (seg === 'jetty') this.jetty(dt);
     // stuck detection (on foot)
@@ -131,7 +131,7 @@ export class Bot {
     let tgt = null, td = 1e9;
     for (const f of foes) { const d = f.pos.distanceTo(p); if (d < td) { td = d; tgt = f; } }
     // Mission 3: a thug on his way to smash the kiosk comes first
-    if (force && !force.ko) { tgt = force; td = force.pos.distanceTo(p); }
+    if (force && force.pos && !force.ko) { tgt = force; td = force.pos.distanceTo(p); }
     // round 4: two can come at once (one from behind), combos run to 1.25 s, a RED heavy cannot be blocked
     const live = (f) => (f.state === 'windup' && f.t > (f.windup || 0.55) - 0.4) || (f.state === 'punch' && f.t < (f.kind === 'combo3' ? 0.95 : f.kind === 'heavy' ? 0.3 : 0.6));
     const threats = foes.filter((f) => live(f) && f.pos.distanceTo(p) < (f.kind === 'heavy' ? 3.0 : 2.5));

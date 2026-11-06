@@ -486,7 +486,8 @@ class Game3D {
     const W = innerWidth, H = innerHeight, v = new THREE.Vector3();
     if (this.fight.active) {
       for (const f of this.fight.list) {
-        if (!f.bar) { f.bar = document.createElement('div'); f.bar.className = 'ehp'; f.bar.innerHTML = '<i></i>'; $('world-ui').appendChild(f.bar); }
+        // a retry's clearWorldUi removes the bars from the page: rebuild a detached one (it stayed hidden forever)
+        if (!f.bar || !f.bar.isConnected) { f.bar = document.createElement('div'); f.bar.className = 'ehp'; f.bar.innerHTML = '<i></i>'; $('world-ui').appendChild(f.bar); }
         v.copy(f.pos); v.y += 2.05; v.project(this.camera);
         const vis = !f.ko && v.z < 1 && f.npc.root.visible;
         f.bar.style.display = vis ? 'block' : 'none';
@@ -1176,8 +1177,9 @@ class Game3D {
     this.fightTries++; this.fightHurt = 0;
     const F = this.fight;
     // round 4: 14/11/11 hits (round 3: 12/9/9), and a third pal (9 hits) who waits at the back of the alley and
-    // steps in when the first of the others goes down (never more than three on their feet)
-    if (!this.fighters) { this.fighters = [new Fighter(N.thief, 14, 'thief'), new Fighter(N.buddyA, 11, 'buddyA'), new Fighter(N.buddyB, 11, 'buddyB'), new Fighter(N.buddyC, 9, 'buddyC')]; this.fighters[3].late = true; }
+    // steps in when the first of the others goes down (never more than three on their feet). 2026-11-06 easing
+    // (Andy: "very hard"): 11/9/9/7 hits (was 14/11/11/9), and the late pal waits until two are down
+    if (!this.fighters) { this.fighters = [new Fighter(N.thief, 11, 'thief'), new Fighter(N.buddyA, 9, 'buddyA'), new Fighter(N.buddyB, 9, 'buddyB'), new Fighter(N.buddyC, 7, 'buddyC')]; this.fighters[3].late = true; this.fighters[3].joinAfter = 2; }
     for (const f of this.fighters) f.npc.fighting = true;
     F.start(this.fighters);
     h.targets = this.fighters;
