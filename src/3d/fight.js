@@ -28,20 +28,21 @@ export class Fighter {
     glow.rotation.x = -Math.PI / 2; glow.position.y = 0.04; npc.root.add(glow); this.glow = glow;
   }
   get pos() { return this.npc.pos; }
-  hittable() { return !this.ko && this.state !== 'down' && this.state !== 'getup' && this.state !== 'evade'; }
+  hittable() { return !this.ko && this.state !== 'down' && this.state !== 'getup' && this.state !== 'evade' && this.state !== 'lurk'; }
 }
 
 export class Fight {
   constructor(game) { this.g = game; this.list = []; this.active = false; }
   start(fighters) {
     this.list = fighters; this.active = true; this.token = null; this.flank = null; this.t = 0; this.won = false; this.gap = 1.2; this.flankGap = 3;
-    for (const f of fighters) { f.state = 'approach'; f.t = 0; f.cool = 0.5 + Math.random() * 1.0; f.hp = f.maxHp; f.ko = false; f.recent = []; f.n = 0; f.kind = 'jab2'; f.npc.show(true); }
+    for (const f of fighters) { f.state = f.late ? 'lurk' : 'approach'; f.t = 0; f.cool = 0.5 + Math.random() * 1.0; f.hp = f.maxHp; f.ko = false; f.recent = []; f.n = 0; f.kind = 'jab2'; f.npc.show(true); }
   }
   // the next attack of this thug: the thief and buddyA mix in a 3-hit combo, buddyB a heavy (unblockable) swing
   nextKind(f) {
     f.n = (f.n || 0) + 1;
     if (f.name === 'buddyB') return f.n % 3 === 0 ? 'heavy' : 'jab2';
     if (f.name === 'thief') return f.n % 2 === 0 ? 'combo3' : 'jab2';
+    if (f.name === 'buddyC') return f.n % 2 === 1 ? 'combo3' : 'jab2';
     return f.n % 3 === 2 ? 'combo3' : 'jab2';
   }
   // behind or to the side of Radwan (more than ~100 degrees from where he faces)
@@ -200,6 +201,14 @@ export class Fight {
           break;
         }
         case 'idle': n.locoAnim(0); break;
+        // the late pal: watches from the back of the alley (a taunt now and then) until one of the others is down
+        case 'lurk': {
+          faceHero();
+          if (n.anim.name === 'taunt' ? f.t > 1.95 : n.anim.name !== 'idle') n.anim.play('idle', { loop: true, fade: 0.3 });
+          if (f.t > 4.5 && n.anim.actions.taunt) { f.t = 0; n.anim.play('taunt', { fade: 0.15 }); }
+          if (this.list.some((o) => o !== f && o.ko) || d < 3) { f.state = 'approach'; f.t = 0; f.cool = 1.2; g.onFight('join', f); }
+          break;
+        }
       }
       // keep a little space from each other and from the hero
       for (const o of this.list) {

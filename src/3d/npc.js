@@ -2,10 +2,10 @@
 // thieves, captain), each with its own mixer. Plus goat and pigeons.
 import * as THREE from '../../vendor/three.module.min.js';
 import * as SkeletonUtils from '../../vendor/addons/SkeletonUtils.js';
-import { A } from './assets3d.js';
+import { A, CHARS, ROLES } from './assets3d.js';
 import { Anim } from './anim.js';
 import { moveBody } from './physics.js';
-import { patchRimFill } from './shade.js';
+import { patchRimFill, rimFillModel } from './shade.js';
 
 const tintCache = new Map();
 // Clothing tint. Round 2: muted galabeya colours (charcoal, navy, olive, grey-brown, off-white) instead of
@@ -148,6 +148,9 @@ function headInfo(mesh) {
 export class Npc {
   constructor(scene, phys, o = {}) {
     this.phys = phys;
+    // a role with its own model in the character map (assets3d.js CHARS / ROLES) wins over the old rig variants
+    const ch = o.char || (o.name && ROLES[o.name]);
+    if (ch && A.glb[ch]) return this.initChar(scene, ch, o);
     const gal = !!o.robe;
     this.model = SkeletonUtils.clone((gal ? A.glb.hero : A.glb.mango_thief).scene);
     let H = null;
@@ -174,6 +177,28 @@ export class Npc {
     this.yaw = 0; this.active = true; this.name = o.name || 'npc';
     this.head = null; this.model.traverse((x) => { if (x.isBone && x.name === 'Head') this.head = x; });
   }
+  // one of the character pack's people: its own mesh, material (plus the townspeople's fill + rim light), its
+  // own clips, metric height (no scaling) and its no-slide gait speeds
+  initChar(scene, ch, o) {
+    const C = CHARS[ch];
+    this.char = ch; this.gait = C;
+    this.model = SkeletonUtils.clone(A.glb[ch].scene);
+    this.model.traverse((x) => { if (x.isMesh) { x.castShadow = true; x.receiveShadow = true; x.frustumCulled = false; } });
+    rimFillModel(this.model, { fill: 0.1, rimK: 0.2 }, 'rimc');
+    this.root = new THREE.Group(); this.root.add(this.model); scene.add(this.root);
+    this.anim = new Anim(this.model, A.clips[ch]);
+    this.anim.play('idle', { loop: true });
+    if (this.anim.actions.idle) this.anim.actions.idle.time = Math.random() * 2;
+    const r = (C.kid ? 0.22 : 0.29) * (C.wide || 1);
+    this.body = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), r, h: C.h, onGround: true, walls: [] };
+    this.yaw = 0; this.active = true; this.name = o.name || ch;
+    this.head = null; this.model.traverse((x) => { if (x.isBone && x.name === 'Head') this.head = x; });
+  }
+  // the clip time scale that makes the feet match a ground speed (pack characters; the old rigs keep their factor)
+  gaitScale(clip, sp) {
+    if (!this.gait) return clip === 'run' ? sp / 5.5 : sp / 1.5;
+    return clip === 'run' ? Math.min(2.4, Math.max(0.8, sp / this.gait.run)) : Math.min(2.0, Math.max(0.7, sp / this.gait.walk));
+  }
   place(x, y, z, yaw) { this.body.pos.set(x, y, z); this.body.vel.set(0, 0, 0); if (yaw !== undefined) this.yaw = yaw; this.sync(); }
   show(on) { this.root.visible = on; this.active = on; }
   // walk/run toward a point on the ground; returns remaining distance
@@ -194,6 +219,12 @@ export class Npc {
     else { b.pos.x += b.vel.x * dt; b.pos.z += b.vel.z * dt; }
   }
   locoAnim(sp) {
+    if (this.gait) {
+      if (sp < 0.3) this.anim.play('idle', { loop: true, fade: 0.2 });
+      else if (sp < this.gait.walk * 1.8) this.anim.play('walk', { loop: true, speed: this.gaitScale('walk', sp), fade: 0.2 });
+      else this.anim.play('run', { loop: true, speed: this.gaitScale('run', sp), fade: 0.15 });
+      return;
+    }
     if (sp < 0.3) this.anim.play('idle', { loop: true, fade: 0.2 });
     else if (sp < 3) this.anim.play('walk', { loop: true, speed: Math.max(0.7, sp / 1.5), fade: 0.2 });
     else this.anim.play('run', { loop: true, speed: Math.min(1.5, Math.max(0.8, sp / 5.5)), fade: 0.15 });

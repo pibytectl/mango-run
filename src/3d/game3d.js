@@ -119,6 +119,8 @@ class Game3D {
       thief: new Npc(S, P, { name: 'thief' }),
       buddyA: new Npc(S, P, { tint: 0x2a3552, name: 'buddyA' }),
       buddyB: new Npc(S, P, { tint: 0x66654a, name: 'buddyB' }),
+      // round 4 (the character pack): the third of the thief's pals, the one in the fake-leather jacket
+      buddyC: new Npc(S, P, { tint: 0x3a3a3a, name: 'buddyC' }),
       captain: new Npc(S, P, { robe: 0x25304a, head: 'scarf', wrap: 0x3a2e26, beard: 1, build: [1.16, 1.0], name: 'captain' }),
       tokDriver: new Npc(S, P, { robe: 0x6d7276, head: 'hair', hair: 0x17130f, beard: 2, build: [0.93, 1.04], name: 'tokDriver' }),
       extras: [new Npc(S, P, { robe: 0x2b2a2e, stripe: 0x8a8d94, head: 'scarf', wrap: 0x45403a, build: [0.94, 1.06], name: 'pass1' }),
@@ -128,7 +130,7 @@ class Game3D {
         new Npc(S, P, { robe: 0x7d8a8f, head: 'kufi', hair: 0x2b2622, beard: 2, build: [0.92, 1.03], name: 'shop2' }),
         new Npc(S, P, { robe: 0x3d4a3a, stripe: 0xb8b2a0, head: 'hair', hair: 0x9a958c, beard: 1, build: [1.0, 0.97], name: 'shop3' })],
     };
-    this.allNpcs = [...this.npc.extras, ...this.npc.shoppers, this.npc.driver, this.npc.tea, ...this.npc.kids, this.npc.thief, this.npc.buddyA, this.npc.buddyB, this.npc.captain, this.npc.tokDriver];
+    this.allNpcs = [...this.npc.extras, ...this.npc.shoppers, this.npc.driver, this.npc.tea, ...this.npc.kids, this.npc.thief, this.npc.buddyA, this.npc.buddyB, this.npc.buddyC, this.npc.captain, this.npc.tokDriver];
     for (const n of this.allNpcs) n.show(false);
   }
   makeProps() {
@@ -358,7 +360,7 @@ class Game3D {
       return;
     }
     const lock = this.hero.lockTarget || (this.seg === 'fight' ? this.nearestFoe() : null);
-    const foes = this.seg === 'fight' && this.fight.active ? this.fight.list.filter((f) => !f.ko && f.npc.root.visible).map((f) => f.pos) : null;
+    const foes = this.seg === 'fight' && this.fight.active ? this.fight.list.filter((f) => !f.ko && f.state !== 'lurk' && f.npc.root.visible).map((f) => f.pos) : null;
     this.cam.update(dt, {
       mode: this.seg === 'fight' && this.mode === 'play' ? 'fight' : 'foot', focus: h.pos, lock: lock ? lock.pos : null, foes,
       heading: h.yaw, speed: Math.hypot(h.body.vel.x, h.body.vel.z), sprint: h.sprinting, slide: h.state === 'slide', look, touch: I3.touch || !!this.bot,
@@ -601,9 +603,10 @@ class Game3D {
       if (m.ground !== false) { const g = this.phys.groundAt(b.pos.x, b.pos.z, 0.2, b.pos.y + 0.5); if (g) b.pos.y = g.y; }
       const want = Math.atan2(dx, dz); let a = want - m.who.yaw; while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI;
       m.who.yaw += a * Math.min(1, 10 * dt);
-      const clip = m.anim || (m.speed > 3 ? 'run' : 'walk');
-      const sp = m.who === this.hero ? (clip === 'run' ? m.speed / 6 : m.speed / 1.7) : (clip === 'run' ? m.speed / 5.5 : m.speed / 1.5);
-      m.who.anim.play(clip, { loop: true, speed: Math.max(0.7, Math.min(1.4, sp)), fade: 0.2 });
+      const clip = m.anim || (m.speed > (m.who.gait ? m.who.gait.walk * 1.8 : 3) ? 'run' : 'walk');
+      // pack characters walk at their own no-slide speed (gaitScale), the old rigs as before
+      const sp = m.who === this.hero ? Math.max(0.7, Math.min(1.4, clip === 'run' ? m.speed / 6 : m.speed / 1.7)) : m.who.gaitScale ? (m.who.gait ? m.who.gaitScale(clip, m.speed) : Math.max(0.7, Math.min(1.4, m.who.gaitScale(clip, m.speed)))) : 1;
+      m.who.anim.play(clip, { loop: true, speed: sp, fade: 0.2 });
       if (m.who.sync) m.who.sync();
     }
     this.movers = this.movers.filter((m) => !m.done);
@@ -1105,6 +1108,7 @@ class Game3D {
     N.thief.show(true); N.thief.place(0, 0, -899, 0);
     N.buddyA.show(true); N.buddyA.place(L.buddyA.x - 1.2, 0, L.buddyA.z, Math.PI / 2);
     N.buddyB.show(true); N.buddyB.place(L.buddyB.x + 1.2, 0, L.buddyB.z, -Math.PI / 2);
+    N.buddyC.show(true); N.buddyC.place(-0.6, 0, -907.5, 0); N.buddyC.anim.play('idle', { loop: true });
     this.shot({ pos: V(1.6, 1.7, -885), look: V(0, 1.3, -899), fov: 46, blend: 0 });
     if (chained) await this.fade(false);
     this.mover(h, 0.2, -889.5, 1.6, { face: Math.PI });
@@ -1113,6 +1117,7 @@ class Game3D {
     this.mover(N.buddyA, -1.8, -896, 1.6, { face: 0.4 });
     this.mover(N.buddyB, 1.9, -897.5, 1.6, { face: -0.4 });
     this.shot({ pos: V(-2.2, 1.3, -892.4), look: this.headOf(N.buddyA, 1.45), fov: 42, blend: 0.6 });
+    N.buddyC.anim.play('taunt', { fade: 0.15 });
     await this.say('f2');
     // Radwan sets the crate down against the wall and squares up
     this.shot({ pos: V(0, 1.75, -893.5), look: this.headOf(h, 1.5), fov: 44, blend: 0.6 });
@@ -1126,8 +1131,9 @@ class Game3D {
     this.cam.release(h.pos, h.yaw);
     this.fightTries++; this.fightHurt = 0;
     const F = this.fight;
-    // round 4: 14/11/11 hits (round 3: 12/9/9)
-    this.fighters = this.fighters || [new Fighter(N.thief, 14, 'thief'), new Fighter(N.buddyA, 11, 'buddyA'), new Fighter(N.buddyB, 11, 'buddyB')];
+    // round 4: 14/11/11 hits (round 3: 12/9/9), and a third pal (9 hits) who waits at the back of the alley and
+    // steps in when the first of the others goes down (never more than three on their feet)
+    if (!this.fighters) { this.fighters = [new Fighter(N.thief, 14, 'thief'), new Fighter(N.buddyA, 11, 'buddyA'), new Fighter(N.buddyB, 11, 'buddyB'), new Fighter(N.buddyC, 9, 'buddyC')]; this.fighters[3].late = true; }
     for (const f of this.fighters) f.npc.fighting = true;
     F.start(this.fighters);
     h.targets = this.fighters;
@@ -1148,6 +1154,7 @@ class Game3D {
     if (e === 'dodged') { this.stats.dodges = (this.stats.dodges || 0) + 1; }
     if (e === 'armor') { sfx3.clack(); this.hint('armor', { ar: 'وهو بيضرب، الضرب الخفيف مش هيوقفه... صدّ أو اتفادى!', en: 'Mid-punch, light hits will not stop him: block or dodge!' }, 2.6, 'block'); }
     if (e === 'evade') { sfx.swing(); }
+    if (e === 'join') { this.voice.bark('f10', 'f10', 4, 2); this.toast({ ar: 'واحد كمان جاي من آخر الحارة!', en: 'Another one is coming from the end of the alley!' }, 2.2); }
     if (e === 'won') { this.fightWon = this.fightTries === 1; this.log('fight won', { tries: this.fightTries }); setTimeout(() => this.run(() => this.cutFightEnd()), 900); }
   }
   async cutFightEnd() {
@@ -1180,7 +1187,7 @@ class Game3D {
     for (const p of this.mangoesFx.list) p.ttl = Math.min(p.ttl, 0.01);
     while (this.stolen > 0) this.gainMango();
     T.show(false); N.buddyA.anim.play('idle', { loop: true }); N.buddyB.anim.play('idle', { loop: true });
-    N.buddyA.show(false); N.buddyB.show(false);
+    N.buddyA.show(false); N.buddyB.show(false); N.buddyC.show(false);
     h.cine = false;
     this.startRoofs('alley');
   }
