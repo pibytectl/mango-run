@@ -59,7 +59,8 @@ export class Bot {
     if (!go) { this.inp.world = { x: 0, z: 0 }; return; }
     this.go(tx, p.z - 6, true);
     for (const L of g.level.laundry) if (p.z - L.z > 1.2 && p.z - L.z < 3.3 && h.state === 'move') this.press('slide');
-    if (p.z < -77 && p.z > -78.6 && h.state === 'move') this.press('jump');
+    const wz = g.level.spawns.marks.wall + 0.45; // front face of the low wall
+    if (p.z < wz + 3 && p.z > wz + 1.4 && h.state === 'move') this.press('jump');
     if (g.ball.live && g.ball.kicked && !g.ball.scored && g.ball.p.distanceTo(p) < 2.3 && this.t - this.atkT > 0.4) { this.atkT = this.t; this.press('attack'); }
   }
   market() {

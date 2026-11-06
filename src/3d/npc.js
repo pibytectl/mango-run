@@ -5,14 +5,20 @@ import * as SkeletonUtils from '../../vendor/addons/SkeletonUtils.js';
 import { A } from './assets3d.js';
 import { Anim } from './anim.js';
 import { moveBody } from './physics.js';
+import { patchRimFill } from './shade.js';
 
 const tintCache = new Map();
+// Clothing tint. Round 2: muted galabeya colours (charcoal, navy, olive, grey-brown, off-white) instead of
+// saturated blue and green, and the cloth keeps its folds (luminance kept), so it reads as a robe and not as
+// a body painted one colour. Every townsperson also gets the character fill + rim light.
 function tintedMaterial(src, color, skinDark) {
   const key = color + '|' + (skinDark || 0);
   if (tintCache.has(key)) return tintCache.get(key);
   const m = src.clone();
-  const c = new THREE.Color(color);
+  const c = new THREE.Color(color || 0xffffff);
   m.onBeforeCompile = (sh) => {
+    patchRimFill(sh, { fill: 0.2, rimK: 0.45 });
+    if (!color) return;
     sh.uniforms.uTint = { value: new THREE.Vector3(c.r, c.g, c.b) };
     sh.uniforms.uSkin = { value: skinDark || 0 };
     sh.fragmentShader = 'uniform vec3 uTint; uniform float uSkin;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
@@ -23,27 +29,66 @@ function tintedMaterial(src, color, skinDark) {
         float ratio = c.g / (c.r + 1e-4);
         float m = smoothstep(0.66, 0.52, ratio) * smoothstep(0.42, 0.6, sat) * step(c.b, c.g);
         float lum = dot(c, vec3(0.3, 0.55, 0.15));
-        diffuseColor.rgb = mix(c, uTint * (lum * 2.3 + 0.05), m);
+        diffuseColor.rgb = mix(c, uTint * (lum * 2.0 + 0.04) * (0.75 + 0.5 * smoothstep(0.05, 0.4, lum)), m);
       }`);
   };
-  m.customProgramCacheKey = () => 'tint' + key;
+  // same shader code for every colour (the colour is a uniform): one program, not one per colour
+  m.customProgramCacheKey = () => 'tint' + (color ? 1 : 0);
   tintCache.set(key, m);
+  return m;
+}
+
+// Townspeople in galabeyas (round 2): the hero's own model (he wears one) without the staff. The dark robe is
+// recoloured below the neck, chosen by bind-pose height (so the face and beard never change) and by darkness
+// (so the tan hands do not); the light head wrap can take a second colour. Folds are kept.
+const galCache = new Map();
+function galabeyaMaterial(src, robe, wrap, neckY) {
+  const key = robe + '|' + (wrap || 0);
+  if (galCache.has(key)) return galCache.get(key);
+  const m = src.clone();
+  const r = new THREE.Color(robe), w = new THREE.Color(wrap || 0xffffff);
+  m.onBeforeCompile = (sh) => {
+    patchRimFill(sh, { fill: 0.2, rimK: 0.45 });
+    sh.uniforms.uRobe = { value: new THREE.Vector3(r.r, r.g, r.b) };
+    sh.uniforms.uWrap = { value: new THREE.Vector4(w.r, w.g, w.b, wrap ? 1 : 0) };
+    sh.uniforms.uNeck = { value: neckY };
+    sh.vertexShader = 'varying float vObjY;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vObjY = position.y;');
+    sh.fragmentShader = 'uniform vec3 uRobe; uniform vec4 uWrap; uniform float uNeck; varying float vObjY;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      {
+        vec3 c = diffuseColor.rgb;
+        float lum = dot(c, vec3(0.3, 0.55, 0.15));
+        float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b)), sat = (mx - mn) / (mx + 1e-4);
+        float body = step(vObjY, uNeck);
+        float robe = body * smoothstep(0.15, 0.07, lum);
+        diffuseColor.rgb = mix(c, uRobe * (0.32 + lum * 9.0), robe);
+        float wrapM = (1.0 - body) * uWrap.w * smoothstep(0.22, 0.4, lum) * smoothstep(0.3, 0.12, sat);
+        diffuseColor.rgb = mix(diffuseColor.rgb, uWrap.rgb * (0.4 + lum * 0.9), wrapM);
+      }`);
+  };
+  m.customProgramCacheKey = () => 'gal';
+  galCache.set(key, m);
   return m;
 }
 
 export class Npc {
   constructor(scene, phys, o = {}) {
     this.phys = phys;
-    this.model = SkeletonUtils.clone(A.glb.mango_thief.scene);
+    const gal = !!o.robe;
+    this.model = SkeletonUtils.clone((gal ? A.glb.hero : A.glb.mango_thief).scene);
+    let neckY = 0;
+    if (gal) {
+      const staff = this.model.getObjectByName('Staff'); if (staff) staff.visible = false;
+      this.model.traverse((x) => { if (x.isSkinnedMesh && x.name !== 'Staff') { x.geometry.computeBoundingBox(); const b = x.geometry.boundingBox; neckY = b.min.y + (b.max.y - b.min.y) * 0.835; } });
+    }
     this.model.traverse((x) => {
       if (x.isMesh) {
         x.castShadow = true; x.receiveShadow = true; x.frustumCulled = false;
-        if (o.tint) x.material = tintedMaterial(x.material, o.tint, o.skin);
+        x.material = gal ? galabeyaMaterial(x.material, o.robe, o.wrap, neckY) : tintedMaterial(x.material, o.tint || 0, o.skin);
       }
     });
     this.root = new THREE.Group(); this.root.add(this.model); scene.add(this.root);
     if (o.scale) this.model.scale.setScalar(o.scale);
-    this.anim = new Anim(this.model, A.clips.mango_thief);
+    this.anim = new Anim(this.model, gal ? A.clips.hero : A.clips.mango_thief);
     this.anim.play('idle', { loop: true });
     this.anim.actions.idle.time = Math.random() * 2;
     this.body = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), r: 0.3 * (o.scale || 1), h: 1.7 * (o.scale || 1), onGround: true, walls: [] };

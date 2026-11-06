@@ -7,10 +7,11 @@ import { LINES } from './lines.js';
 const BASE = 'assets/3d/';
 export const A = { glb: {}, tex: {}, voice: {}, clips: {} };
 
-const MODELS = ['hero', 'mango_thief', 'tuktuk', 'cart', 'goat', 'ferry', 'mango_crate', 'mango', 'satellite_dish'];
+const MODELS = ['hero', 'mango_thief', 'cart', 'goat', 'mango_crate', 'mango', 'satellite_dish']; // tok-toks and the ferry are built in code (vehicle.js)
+// 1 = tiling (repeat wrap + anisotropy), 0 = clamped. All WebP, mipmapped by three.js on upload.
 const TEX = {
-  facade_plaster: 1, facade_brick: 1, facade_pastel: 1, facade_pink: 1, shopfronts: 1, ground_street: 1, ground_market: 1,
-  roof_concrete: 1, wood_planks: 1, khayamiya: 1, produce: 1, sky: 0, skyline: 0, laundry: 0,
+  atlas_facades: 0, atlas_town: 0, ground_r2: 1, ground_market: 1, wood_planks: 1, khayamiya: 1, produce: 1,
+  kiosk_goods: 0, fridge: 0, sky: 0, skyline: 0, laundry: 0,
 };
 
 export async function loadAssets3D(onProgress, maxAniso = 4) {

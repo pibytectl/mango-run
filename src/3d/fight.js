@@ -1,6 +1,11 @@
 // The alley brawl: up to three thieves. One attacker at a time (token), a readable telegraph before every
 // punch (lean back + glow + "!" marker + a rising tone), jab then cross. Radwan's hits stagger, the
 // finisher knocks down; at zero health a thief stays down and gives up.
+// Round 2 easing (a normal player went from 6 to 1 health in 19 s): a longer telegraph (longer still when the
+// thug is off screen, who also gets an edge warning), a pause between attackers, light hits can still cancel
+// the first half of a wind-up, longer cooldowns.
+const WINDUP = 0.75, WINDUP_OFFSCREEN = 1.15, TOKEN_GAP = 0.8;
+const _v = new THREE.Vector3();
 import * as THREE from '../../vendor/three.module.min.js';
 
 export class Fighter {
@@ -18,7 +23,7 @@ export class Fighter {
 export class Fight {
   constructor(game) { this.g = game; this.list = []; this.active = false; }
   start(fighters) {
-    this.list = fighters; this.active = true; this.token = null; this.t = 0; this.won = false;
+    this.list = fighters; this.active = true; this.token = null; this.t = 0; this.won = false; this.gap = 1.2;
     for (const f of fighters) { f.state = 'approach'; f.t = 0; f.cool = 0.5 + Math.random() * 1.0; f.hp = f.maxHp; f.ko = false; f.recent = []; f.npc.show(true); }
   }
   stop() { this.active = false; for (const f of this.list) f.glow.material.opacity = 0; }
@@ -47,8 +52,8 @@ export class Fight {
     f.hp -= atk.dmg; f.hitsTaken++;
     const b = f.npc.body;
     // committed to a punch: light hits do not stop it (block or dodge instead); the finisher does
-    if ((f.state === 'windup' || f.state === 'punch') && !atk.finisher && f.hp > 0) { g.onFight('armor', f); return; }
-    if (this.token === f) this.token = null;
+    if (((f.state === 'windup' && f.t > f.windup * 0.5) || f.state === 'punch') && !atk.finisher && f.hp > 0) { g.onFight('armor', f); return; }
+    if (this.token === f) { this.token = null; this.gap = TOKEN_GAP * 0.6; }
     f.glow.material.opacity = 0;
     // too many hits in a row: he hops back out of the combo
     f.recent = (f.recent || []).filter((t) => this.t - t < 2.2); f.recent.push(this.t);
@@ -82,7 +87,7 @@ export class Fight {
   step(dt) {
     if (!this.active) return;
     const g = this.g, hero = g.hero, hp = hero.pos;
-    this.t += dt;
+    this.t += dt; this.gap = Math.max(0, this.gap - dt);
     const alive = this.alive();
     if (!alive.length) { if (!this.won) { this.won = true; g.onFight('won'); } }
     // separation + face/approach
@@ -102,15 +107,15 @@ export class Fight {
           // strafe around the hero while waiting
           if (this.token !== f) { const s = 1.1 * f.circleDir; vx += -dz / d * s; vz += dx / d * s; if (Math.random() < dt * 0.3) f.circleDir *= -1; }
           f.cool -= dt;
-          if (!this.token && f.cool <= 0 && hero.state !== 'down' && hero.state !== 'getup' && d < 4.5) { this.token = f; }
-          if (this.token === f && d < 1.7) { f.state = 'windup'; f.t = 0; n.anim.play('punch', { fade: 0.1, speed: 0.0001, at: 0.12 }); g.onFight('telegraph', f); }
+          if (!this.token && this.gap <= 0 && f.cool <= 0 && hero.state !== 'down' && hero.state !== 'getup' && d < 4.5) { this.token = f; }
+          if (this.token === f && d < 1.7) { f.state = 'windup'; f.t = 0; f.windup = this.onScreen(f) ? WINDUP : WINDUP_OFFSCREEN; n.anim.play('punch', { fade: 0.1, speed: 0.0001, at: 0.12 }); g.onFight('telegraph', f); }
           const sp2 = Math.hypot(vx, vz); n.locoAnim(sp2);
           break;
         }
         case 'windup': {
           faceHero();
           f.glow.material.opacity = 0.35 + 0.45 * Math.abs(Math.sin(f.t * 18));
-          if (f.t > 0.55) { f.state = 'punch'; f.t = 0; f.p1 = f.p2 = false; n.anim.play('punch', { fade: 0.03, speed: 1.0, restart: true }); f.glow.material.opacity = 0; }
+          if (f.t > f.windup) { f.state = 'punch'; f.t = 0; f.p1 = f.p2 = false; n.anim.play('punch', { fade: 0.03, speed: 1.0, restart: true }); f.glow.material.opacity = 0; }
           break;
         }
         case 'punch': {
@@ -119,7 +124,7 @@ export class Fight {
           vx = Math.sin(n.yaw) * lunge; vz = Math.cos(n.yaw) * lunge;
           if (!f.p1 && f.t >= 0.27) { f.p1 = true; this.punchCheck(f); }
           if (!f.p2 && f.t >= 0.5) { f.p2 = true; this.punchCheck(f); }
-          if (f.t > 0.93) { f.state = 'circle'; f.t = 0; f.cool = 0.9 + Math.random() * 1.0; if (this.token === f) this.token = null; }
+          if (f.t > 0.93) { f.state = 'circle'; f.t = 0; f.cool = 1.4 + Math.random() * 1.0; if (this.token === f) { this.token = null; this.gap = TOKEN_GAP; } }
           break;
         }
         case 'hit': {
@@ -151,6 +156,11 @@ export class Fight {
       n.move(dt);
       n.update(dt);
     }
+  }
+  onScreen(f) {
+    const cam = this.g.camera; if (!cam) return true;
+    _v.copy(f.pos); _v.y += 1.1; _v.project(cam);
+    return _v.z < 1 && Math.abs(_v.x) < 0.92 && Math.abs(_v.y) < 1;
   }
   punchCheck(f) {
     const g = this.g, hero = g.hero, n = f.npc;

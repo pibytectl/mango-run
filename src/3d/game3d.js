@@ -4,7 +4,7 @@
 import * as THREE from '../../vendor/three.module.min.js';
 import { loadAssets3D, prefetchVoices, A } from './assets3d.js';
 import { PhysWorld } from './physics.js';
-import { Level, ROOF } from './level.js';
+import { Level, ROOF, PLAZA_Z } from './level.js';
 import { Hero, ATTACKS } from './hero3d.js';
 import { Npc, Goat, Pigeons } from './npc.js';
 import { Sky, Particles, Mangoes } from './fx3d.js';
@@ -12,10 +12,10 @@ import { ChaseCam } from './camera3d.js';
 import { I3, initInput3D, readInput3D, takeLook, clearInput3D } from './input3d.js';
 import { Voice } from './voice.js';
 import { sfx3, Engine } from './sfx3d.js';
-import { Chase, makeTok } from './vehicle.js';
+import { Chase, makeTok, makeFerry } from './vehicle.js';
 import { Fight, Fighter } from './fight.js';
 import { Bot } from './bot.js';
-import { sfx, playMusic, setMusicRate, loadMusic, audioInit } from '../audio.js';
+import { sfx, playMusic, setMusicRate, loadMusic, audioInit, loadAmbient, setAmbient } from '../audio.js';
 import { num, clock } from '../strings.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -62,6 +62,8 @@ class Game3D {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 1400);
     this.phys = new PhysWorld();
+    // the shop signs and kiosk banners are drawn into canvases in the game font: make sure it is ready
+    try { await Promise.race([document.fonts.load('900 40px CairoGame'), new Promise((r) => setTimeout(r, 3000))]); } catch (e) {}
     this.level = new Level(this.scene, this.phys).build();
     ui.setLoad(0.93);
     this.sky = new Sky(this.scene, r, this.quality);
@@ -82,27 +84,36 @@ class Game3D {
     addEventListener('resize', this._onResize = () => this.resize());
     this.resize();
     // compile shaders up front so the first frames do not hitch
-    this.hero.place(3.6, 0, 20.5, Math.PI);
+    this.hero.place(3.6, 0, 20.5 + PLAZA_Z, Math.PI);
     this.cam.snapBehind(this.hero.pos, Math.PI);
     this.cam.update(0.016, { focus: this.hero.pos, look: { x: 0, y: 0 } });
+    // compile every shader now, hidden things included (townspeople, chase tok-toks...): compile() skips
+    // invisible objects, and their first appearance used to stall the opening shot while shaders built
+    const hidden = []; this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
     r.compile(this.scene, this.camera);
+    for (const o of hidden) o.visible = false;
     ui.setLoad(1);
     prefetchVoices();
+    // Mzee's own recordings: street traffic (low-passed into a distant hum) and the city heard from a rooftop
+    loadAmbient('street', 'assets/3d/amb_traffic.mp3'); loadAmbient('roof', 'assets/3d/amb_roof.mp3');
     this.log('loaded', { boxes: this.phys.boxes.length, calls: 0 });
   }
 
   makeCast() {
     const S = this.scene, P = this.phys;
+    // townspeople wear galabeyas (the hero's model, muted colours from the reference photos: navy, olive,
+    // charcoal, grey-brown, black, off-white) with a white or coloured head wrap; the thief and his pals keep
+    // the thief model; kids in t-shirt colours
     this.npc = {
-      driver: new Npc(S, P, { tint: 0x5b6d8a, name: 'driver' }),
-      tea: new Npc(S, P, { tint: 0x9a8f80, name: 'tea' }),
-      kids: [new Npc(S, P, { tint: 0x2f8f4f, scale: 0.62, name: 'kid1' }), new Npc(S, P, { tint: 0xe0b020, scale: 0.6, name: 'kid2' }), new Npc(S, P, { tint: 0x3a60c0, scale: 0.66, name: 'kid3' })],
+      driver: new Npc(S, P, { robe: 0x56647a, wrap: 0x8a8a86, name: 'driver' }),
+      tea: new Npc(S, P, { robe: 0xcfc6b0, name: 'tea' }),
+      kids: [new Npc(S, P, { tint: 0x3f7a55, scale: 0.62, name: 'kid1' }), new Npc(S, P, { tint: 0xc0943c, scale: 0.6, name: 'kid2' }), new Npc(S, P, { tint: 0x40609a, scale: 0.66, name: 'kid3' })],
       thief: new Npc(S, P, { name: 'thief' }),
-      buddyA: new Npc(S, P, { tint: 0x2d4f9c, name: 'buddyA' }),
-      buddyB: new Npc(S, P, { tint: 0x3f7d3a, name: 'buddyB' }),
-      captain: new Npc(S, P, { tint: 0xe8e4da, name: 'captain' }),
-      tokDriver: new Npc(S, P, { tint: 0xd8a040, name: 'tokDriver' }),
-      extras: [new Npc(S, P, { tint: 0x8a5a3a, name: 'pass1' }), new Npc(S, P, { tint: 0xa04060, scale: 0.96, name: 'pass2' })],
+      buddyA: new Npc(S, P, { tint: 0x2a3552, name: 'buddyA' }),
+      buddyB: new Npc(S, P, { tint: 0x66654a, name: 'buddyB' }),
+      captain: new Npc(S, P, { robe: 0x2a3552, name: 'captain' }),
+      tokDriver: new Npc(S, P, { robe: 0x66654a, wrap: 0x6e5a44, name: 'tokDriver' }),
+      extras: [new Npc(S, P, { robe: 0x2b2a2b, name: 'pass1' }), new Npc(S, P, { robe: 0x5e5246, wrap: 0xb8ad96, scale: 0.97, name: 'pass2' })],
     };
     this.allNpcs = [...this.npc.extras, this.npc.driver, this.npc.tea, ...this.npc.kids, this.npc.thief, this.npc.buddyA, this.npc.buddyB, this.npc.captain, this.npc.tokDriver];
     for (const n of this.allNpcs) n.show(false);
@@ -115,15 +126,12 @@ class Game3D {
     const bt = new THREE.CanvasTexture(c); bt.colorSpace = THREE.SRGBColorSpace;
     this.ball = { m: new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), new THREE.MeshLambertMaterial({ map: bt })), p: V(10, 0.17, -60), v: V(), live: false };
     this.ball.m.castShadow = true; this.scene.add(this.ball.m); this.ball.m.visible = false;
-    // ferry
-    const f = A.glb.ferry.scene.clone();
-    f.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    const bb = new THREE.Box3().setFromObject(f);
-    this.ferryDeckLocal = bb.min.y + (bb.max.y - bb.min.y) * 0.4;
-    const fr = new THREE.Group(); f.rotation.y = Math.PI / 2; fr.add(f); this.scene.add(fr);
+    // ferry: the Imbaba river ferry built in code (round 2, from Mzee's photos): white hull with a blue band and
+    // tyre fenders, plank deck, side benches and rails, a canopy on posts at standing height with a rail on the
+    // roof, a small teal wheelhouse at the bow, the flag at the stern, its name board in Arabic
+    const fr = new THREE.Group(); fr.add(makeFerry()); this.scene.add(fr);
+    this.ferryDeckLocal = 0;
     this.ferry = { root: fr, z: 0, v: 0, moving: false, deck: this.phys.add(-1.5, -2, -4.3, 1.5, 0.35, 4.3, { dynamic: true, kind: 'ferry' }) };
-    // the deck sits at y 0.35: lift the hull so its deck height matches
-    f.position.y = 0.35 - this.ferryDeckLocal;
     this.elapsed = 0; this.resetFerry();
     // crash cart + a world crate for when Radwan sets his down
     this.crashCart = A.glb.cart.scene.clone(); this.crashCart.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -137,6 +145,20 @@ class Game3D {
     // lock ring
     this.lockRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.68, 32), new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.85, depthWrite: false }));
     this.lockRing.rotation.x = -Math.PI / 2; this.lockRing.visible = false; this.scene.add(this.lockRing);
+    // rooftop start cue: a chalk arrow on the wall over the crates and a pulsing ring on top of them
+    {
+      const c = document.createElement('canvas'); c.width = 128; c.height = 256; const x = c.getContext('2d');
+      x.strokeStyle = '#ffe27a'; x.fillStyle = '#ffe27a'; x.lineWidth = 18; x.lineCap = 'round'; x.lineJoin = 'round';
+      x.beginPath(); x.moveTo(64, 236); x.lineTo(64, 70); x.stroke();
+      x.beginPath(); x.moveTo(14, 96); x.lineTo(64, 20); x.lineTo(114, 96); x.stroke();
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const arrow = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 1.5), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, fog: false }));
+      arrow.position.set(-3.5, 2.6, -917.95);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.56, 28), new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(-3.5, 1.23, -916.4);
+      this.roofCue = new THREE.Group(); this.roofCue.add(arrow, ring); this.roofCue.visible = false; this.scene.add(this.roofCue);
+      this.roofCueRing = ring;
+    }
   }
   resize() {
     const w = innerWidth, h = innerHeight;
@@ -146,7 +168,7 @@ class Game3D {
   applyDpr() {
     const max = Math.min(window.devicePixelRatio || 1, this.isTouch ? 1.5 : 1.35);
     this.dprScale = this.dprScale || 1;
-    this.renderer.setPixelRatio(Math.max(0.5, max * this.dprScale));
+    this.renderer.setPixelRatio(Math.max(0.75, max * this.dprScale));
     this.renderer.setSize(innerWidth, innerHeight, false);
     this.fx.mat.uniforms.uScale.value = innerHeight * this.renderer.getPixelRatio() * 0.9;
   }
@@ -159,7 +181,7 @@ class Game3D {
     this.state = 'play';
     $('bars3d').onclick = () => this.advance();
     $('skip3d').onclick = (e) => { e.stopPropagation(); this.skipCut(); };
-    playMusic('title', 0.45);
+    audioInit('3d'); playMusic('title', 0.45); setAmbient(0.16);
     this.raf = requestAnimationFrame((t) => this.frame(t));
     if (this.auto) { this.bot = new Bot(this); I3.bot = this.bot.inp; }
     const seg = Q.get('seg3d');
@@ -186,12 +208,12 @@ class Game3D {
   restoreCp() {
     const c = this.cp;
     this.mangoes = c.mangoes; this.stolen = c.stolen; this.timeLeft = Math.max(c.time, 120); this.hp = 6;
-    this.voice.stop(); this.voice.hide(); this.mangoesFx.clear(); this.clearWorldUi();
+    this.voice.stop(); this.voice.hide(); this.mangoesFx.clear(); this.clearWorldUi(); this.ui.hideToast(); this.clearSticky();
     this.hero.cine = false; this.hero.ride = false; this.hero.body.h = 1.75; this.hero.lockTarget = null; this.hero.targets = [];
     this.chase.stop(); this.chase.hide(); this.fight.stop(); this.engine.stop();
     for (const n of this.allNpcs) n.show(false);
     for (const t of this.streetToks) this.scene.remove(t.tok.root);
-    this.streetToks = []; this.timeScale = 1; this.hitStop = 0;
+    this.streetToks = []; this.timeScale = 1; this.hitStop = 0; this.movers = [];
     this.cam.shot = null;
     this.enterSeg(c.seg, true);
   }
@@ -208,14 +230,16 @@ class Game3D {
   skipCut() { if (this.mode !== 'cut') return; this.skip = true; this.voice.stop(); for (const w of this.waits) w.res(); this.waits = []; }
   advance() { if (this.mode === 'cut' && this.voice.busy()) this.voice.stop(); }
   play(seg) {
-    this.mode = 'play'; this.seg = seg; this.cam.shot = null;
+    this.mode = 'play'; this.seg = seg; this.cam.shot = null; if (this.roofCue) this.roofCue.visible = false;
     this.showControls(true); clearInput3D(); this.setButtons(seg);
     this.segStart = this.elapsed;
     this.stats.segTimes[seg] = +this.elapsed.toFixed(1);
     this.log('segment', seg, { t: +this.elapsed.toFixed(1), mangoes: this.mangoes, hp: this.hp });
     const s = SEG[seg]; this.ui.banner({ ar: s.ar, en: s.en });
-    setTimeout(() => { if (this.seg === seg && this.mode === 'play') this.toast({ ar: s.oar, en: s.oen }, 3.2); }, 2300);
+    setTimeout(() => { if (this.seg === seg && this.mode === 'play' && !this.stickyOn()) this.toast({ ar: s.oar, en: s.oen }, 3.2, 'obj'); }, 2300);
     playMusic('run', 0.5); setMusicRate(seg === 'chase' || seg === 'fight' ? 1.05 : 1);
+    if (seg === 'roofs' || seg === 'jetty') setAmbient(seg === 'roofs' ? 0.32 : 0.2, 'roof');
+    else setAmbient(seg === 'chase' ? 0.34 : seg === 'street' || seg === 'market' ? 0.24 : 0, 'street');
   }
   showControls(on) { this.ui.show('hud', on); $('c3d').classList.toggle('hidden', !on); I3.enabled = on; }
   setButtons(seg) {
@@ -290,19 +314,27 @@ class Game3D {
       return;
     }
     const lock = this.hero.lockTarget || (this.seg === 'fight' ? this.nearestFoe() : null);
+    const foes = this.seg === 'fight' && this.fight.active ? this.fight.list.filter((f) => !f.ko && f.npc.root.visible).map((f) => f.pos) : null;
     this.cam.update(dt, {
-      mode: this.seg === 'fight' && this.mode === 'play' ? 'fight' : 'foot', focus: h.pos, lock: lock ? lock.pos : null,
+      mode: this.seg === 'fight' && this.mode === 'play' ? 'fight' : 'foot', focus: h.pos, lock: lock ? lock.pos : null, foes,
       heading: h.yaw, speed: Math.hypot(h.body.vel.x, h.body.vel.z), sprint: h.sprinting, slide: h.state === 'slide', look, touch: this.isTouch || !!this.bot,
+      // every on-foot stretch of the mission runs down -Z (west, to the Nile): on touch the camera lines up with
+      // the route, not with the hero's heading, so an off-angle stick no longer curls "forward" into a wall
+      route: this.isTouch || this.bot ? Math.PI : undefined,
       high: this.seg === 'roofs',
     });
   }
   renderFrame(dt) {
     const focus = this.seg === 'chase' && this.chase.active ? V(this.chase.player.x, 0, this.chase.player.z) : this.hero.pos;
     this.sky.update(this.camera.position, focus);
+    // static town chunks beyond ~340 m are fully fogged (FogExp2 0.0062 is ~97% fog at 300 m): skip them
+    const cp = this.camera.position;
+    for (const m of this.level.meshes) { const b = m.geometry.boundingSphere; m.visible = Math.hypot(b.center.x - cp.x, b.center.z - cp.z) - b.radius < 340; }
     this.level.nile.material.uniforms.uTime.value += dt;
     this.level.nile.material.uniforms.uSun.value.copy(this.sky.dir);
     this.level.nile.material.uniforms.uFogCol.value.copy(this.sky.fog.color);
     this.renderer.render(this.scene, this.camera);
+    this.ui.tickToast(dt);
     this.updateWorldUi(dt);
     this.syncHud();
   }
@@ -314,7 +346,8 @@ class Game3D {
     this.stats.fps.push(Math.round(fps));
     this.stats.calls = this.renderer.info.render.calls; this.stats.tris = this.renderer.info.render.triangles;
     if (fps < 45) { this.slow = (this.slow || 0) + 1; this.fast = 0; } else if (fps > 57) { this.fast = (this.fast || 0) + 1; this.slow = 0; }
-    if (this.slow >= 2 && this.dprScale > 0.5) { this.dprScale = Math.max(0.5, this.dprScale - 0.12); this.slow = 0; this.applyDpr(); }
+    // never below 0.75 of the device ratio cap: lower than that the picture turns to mush (Low Power Mode runs at 30 fps)
+    if (this.slow >= 2 && this.dprScale > 0.75) { this.dprScale = Math.max(0.75, this.dprScale - 0.08); this.slow = 0; this.applyDpr(); }
     if (this.fast >= 6 && this.dprScale < 1) { this.dprScale = Math.min(1, this.dprScale + 0.08); this.fast = 0; this.applyDpr(); }
     const f = $('fps');
     if (this.auto || new URLSearchParams(location.search).has('fps')) { f.classList.remove('hidden'); f.textContent = `${Math.round(fps)} fps · dpr ${this.renderer.getPixelRatio().toFixed(2)} · ${this.seg} · z ${this.hero.pos.z.toFixed(0)} · calls ${this.stats.calls}`; }
@@ -324,14 +357,31 @@ class Game3D {
   syncHud(force) {
     const ui = this.ui;
     if (force || this._hp !== this.hp) {
+      const pop = this._hp !== undefined && this.hp < this._hp ? Math.floor(this.hp / 2) : -1;
       this._hp = this.hp;
-      $('hearts').innerHTML = [0, 1, 2].map((i) => `<div class="heart${this.hp >= i * 2 + 2 ? '' : this.hp === i * 2 + 1 ? ' half' : ' empty'}"></div>`).join('');
+      ui.setHalfHearts(this.hp, pop);
     }
     if (force || this._m !== this.mangoes) { const up = this._m !== undefined && this.mangoes > this._m; this._m = this.mangoes; ui.setMangoes(this.mangoes, !force); if (!force) $('slot-crate').classList.toggle('gain', up); }
     ui.setStamina(this.seg === 'chase' ? this.chase.player.boost : this.hero.stamina);
     ui.setTime(this.timeLeft, LIMIT);
   }
-  toast(t, dur = 2.6) { this.ui.toast(t, dur); }
+  toast(t, dur = 2.6, key) { this.ui.toast(t, dur, key); }
+  // An obstacle hint that stays up while the obstacle is ahead: refreshed every step it is wanted, cleared
+  // as soon as it is not (passed, or the segment changed). A short warning may cover it; it comes back after.
+  stickyHint(key, t, btn) {
+    const ui = this.ui;
+    if (ui.toastKey === key || ui.toastT <= 0.05 || ui.toastKey === 'obj') ui.toast(t, 0.4, key);
+    if (this._sticky && this._sticky.key !== key) this.clearSticky();
+    if (!this._sticky) {
+      const el = btn ? document.querySelector(`#c3d [data-b="${btn}"]`) : null;
+      if (el) el.classList.add('hint');
+      this._sticky = { key, el };
+    }
+    this._sticky.seen = this.elapsed;
+  }
+  stickyOn() { return !!this._sticky; }
+  stickyTick() { if (this._sticky && this.elapsed - this._sticky.seen > 0.05) this.clearSticky(); }
+  clearSticky() { const S = this._sticky; if (!S) return; this._sticky = null; if (S.el) S.el.classList.remove('hint'); this.ui.hideToast(S.key); }
   hint(key, t, dur = 3, btn) {
     this.hinted = this.hinted || {};
     const n = this.hinted[key] || 0;
@@ -340,7 +390,7 @@ class Game3D {
     this.toast(t, dur);
     if (btn) { const el = document.querySelector(`#c3d [data-b="${btn}"]`); if (el) { el.classList.add('hint'); setTimeout(() => el.classList.remove('hint'), dur * 1000); } }
   }
-  clearWorldUi() { for (const el of document.querySelectorAll('#world-ui .ehp')) el.remove(); this.lockRing.visible = false; }
+  clearWorldUi() { for (const el of document.querySelectorAll('#world-ui .ehp')) el.remove(); this.lockRing.visible = false; for (const e of this._warnEls || []) e.className = 'offwarn hidden'; $('toast').classList.remove('low'); }
   updateWorldUi() {
     const W = innerWidth, H = innerHeight, v = new THREE.Vector3();
     if (this.fight.active) {
@@ -352,9 +402,46 @@ class Game3D {
         if (vis) { f.bar.style.left = ((v.x + 1) / 2 * W) + 'px'; f.bar.style.top = ((1 - v.y) / 2 * H) + 'px'; f.bar.firstChild.style.width = (100 * f.hp / f.maxHp) + '%'; f.bar.classList.toggle('warn', f.state === 'windup'); }
       }
     }
+    this.offscreenWarn();
+    this.toastDodge();
     const lt = this.hero.lockTarget || (this.seg === 'fight' && this.mode === 'play' ? this.nearestFoe() : null);
     this.lockRing.visible = !!lt && this.mode === 'play';
     if (lt) { this.lockRing.position.set(lt.pos.x, lt.pos.y + 0.05, lt.pos.z); this.lockRing.material.opacity = this.hero.lockTarget ? 0.9 : 0.45; }
+  }
+  // a thug about to punch from outside the picture gets a pulsing "!" arrow on that screen edge
+  offscreenWarn() {
+    const els = this._warnEls || (this._warnEls = [0, 1].map(() => { const e = document.createElement('div'); e.className = 'offwarn hidden'; e.innerHTML = '<b>!</b><i></i>'; $('world-ui').appendChild(e); return e; }));
+    let n = 0;
+    if (this.fight.active && this.mode === 'play') {
+      const inv = this.camera.matrixWorldInverse, v = new THREE.Vector3(), W = innerWidth, H = innerHeight;
+      for (const f of this.fight.list) {
+        if (f.ko || n >= 2) continue;
+        const threat = f.state === 'windup' || f.state === 'punch' || (this.fight.token === f && f.pos.distanceTo(this.hero.pos) < 3.2);
+        if (!threat) continue;
+        v.copy(f.pos); v.y += 1.2; v.applyMatrix4(inv);                // camera space: -z is ahead
+        const behind = v.z > -0.2, k = this.camera.projectionMatrix.elements;
+        const px = behind ? (v.x >= 0 ? 2 : -2) : (v.x * k[0]) / -v.z;
+        if (!behind && Math.abs(px) < 0.9) continue;                   // on screen: the glow ring is enough
+        const e = els[n++], side = behind && Math.abs(v.x) < 0.6 ? 'b' : px > 0 ? 'r' : 'l';
+        e.className = 'offwarn ' + side + (f.state === 'windup' || f.state === 'punch' ? ' hot' : '');
+        e.style.top = side === 'b' ? '' : Math.round(H * 0.5) + 'px'; e.style.left = side === 'b' ? Math.round(W * 0.5) + 'px' : '';
+      }
+    }
+    for (let i = n; i < els.length; i++) els[i].className = 'offwarn hidden';
+  }
+  // keep a toast off the enemy health bars: if it would cover one, move it down to a lower slot
+  toastDodge() {
+    const t = $('toast');
+    let low = false;
+    if (this.fight.active && !t.classList.contains('hidden')) {
+      const r = t.getBoundingClientRect(), h = r.height || 40, top = 58;
+      for (const f of this.fight.list) {
+        if (!f.bar || f.bar.style.display === 'none') continue;
+        const b = f.bar.getBoundingClientRect();
+        if (b.right > r.left - 6 && b.left < r.right + 6 && b.bottom > top - 6 && b.top < top + h + 6) { low = true; break; }
+      }
+    }
+    t.classList.toggle('low', low);
   }
   nearestFoe() {
     let best = null, bd = 1e9;
@@ -377,6 +464,7 @@ class Game3D {
       case 'vault': sfx.vault(); if (Math.random() < 0.45) this.voice.bark(['r1', 'r2'], 'parkour', 9); break;
       case 'climb': sfx.cloth(); break;
       case 'walljump': sfx3.wall(); this.fx.emit(p.x, p.y + 1, p.z, 6, { speed: 1.5, up: 0.3 }); this.cam.shake(0.12); break;
+      case 'duck': sfx.cloth(); break;
       case 'slide': sfx3.slide(); this.fx.emit(p.x, p.y + 0.05, p.z, 8, { speed: 1.4, up: 0.4, life: 0.7 }); break;
       case 'dodge': sfx.swing(); break;
       case 'swing': sfx3.whoosh(d); break;
@@ -466,34 +554,34 @@ class Game3D {
 
   // ================================================================== 1. intro
   async cutIntro() {
-    const h = this.hero, N = this.npc, L = this.level.spawns;
+    const h = this.hero, N = this.npc, L = this.level.spawns, Z = PLAZA_Z, P = (x, y, z) => V(x, y, z + Z);
     this.seg = 'intro';
     h.setCarry(true); h.cine = true;
-    h.place(4.05, 0, 21.2, -Math.PI / 2);
-    N.driver.show(true); N.driver.place(3.2, 0, 24.6, Math.PI * 0.8);
+    h.place(4.05, 0, 21.2 + Z, -Math.PI / 2);
+    N.driver.show(true); N.driver.place(3.2, 0, 24.6 + Z, Math.PI * 0.8);
     N.tea.show(true); N.tea.place(L.tea.x, 0, L.tea.z, 0.7);
-    N.kids[0].show(true); N.kids[0].place(-12, 0, 18, 1.4);
-    N.extras[0].show(true); N.extras[0].place(8.3, 0, 24, -1.2);
-    N.extras[1].show(true); N.extras[1].place(-7.6, 0, 22.4, 2.0);
-    this.mover(N.kids[0], 6, 8, 2.2);
-    this.shot({ pos: V(-9, 6.5, 1), pos2: V(-6, 4, 8.5), look: V(3.5, 1.5, 21), look2: V(3, 1.4, 20), fov: 50, dur: 9 });
-    this.mover(h, 2.8, 19.6, 1.4);
+    N.kids[0].show(true); N.kids[0].place(-12, 0, 18 + Z, 1.4);
+    N.extras[0].show(true); N.extras[0].place(8.3, 0, 24 + Z, -1.2);
+    N.extras[1].show(true); N.extras[1].place(-7.6, 0, 22.4 + Z, 2.0);
+    this.mover(N.kids[0], 6, 8 + Z, 2.2);
+    this.shot({ pos: P(-9, 6.5, 1), pos2: P(-6, 4, 8.5), look: P(3.5, 1.5, 21), look2: P(3, 1.4, 20), fov: 50, dur: 9 });
+    this.mover(h, 2.8, 19.6 + Z, 1.4);
     await this.say('i1');
-    this.shot({ pos: V(1.5, 1.68, 17.2), look: this.headOf(h, 1.55), fov: 40, blend: 0.6 });
-    this.faceTo(h, 1.5, 17.2);
+    this.shot({ pos: P(1.5, 1.68, 17.2), look: this.headOf(h, 1.55), fov: 40, blend: 0.6 });
+    this.faceTo(h, 1.5, 17.2 + Z);
     await this.say('i2');
     this.faceTo(N.tea, h.pos.x, h.pos.z);
-    this.shot({ pos: V(3.9, 2.0, 20.9), pos2: V(3.2, 1.9, 19.6), look: V(L.tea.x, 1.35, L.tea.z), fov: 44, blend: 0.8, dur: 6 });
-    this.mover(h, 0.5, 16.6, 1.3);
+    this.shot({ pos: P(3.9, 2.0, 20.9), pos2: P(3.2, 1.9, 19.6), look: V(L.tea.x, 1.35, L.tea.z), fov: 44, blend: 0.8, dur: 6 });
+    this.mover(h, 0.5, 16.6 + Z, 1.3);
     await this.say('i3');
     this.faceTo(N.tea, h.pos.x, h.pos.z);
-    this.shot({ pos: V(-1.0, 1.62, 15.2), look: this.headOf(h, 1.55), fov: 40, blend: 0.7 });
+    this.shot({ pos: P(-1.0, 1.62, 15.2), look: this.headOf(h, 1.55), fov: 40, blend: 0.7 });
     await this.say('i4');
-    this.shot({ pos: V(-2.2, 1.68, 16.5), look: this.headOf(N.tea, 1.45), fov: 40, blend: 0.7 });
+    this.shot({ pos: P(-2.2, 1.68, 16.5), look: this.headOf(N.tea, 1.45), fov: 40, blend: 0.7 });
     await this.say('i5');
     // he turns to the street: the camera swings behind him, the whole street and the sunset in view
-    this.mover(h, 0.6, 12.5, 1.6, { face: Math.PI });
-    this.shot({ pos: V(1.6, 2.3, 19.5), pos2: V(1.0, 2.05, 16.5), look: V(0, 2.4, -60), fov: 58, blend: 1.4, dur: 5 });
+    this.mover(h, 0.6, 12.5 + Z, 1.6, { face: Math.PI });
+    this.shot({ pos: P(1.6, 2.3, 19.5), pos2: P(0.6, 2.05, 16.5), look: P(0, 2.4, -60), look2: P(0.6, 2.2, -60), fov: 58, blend: 1.4, dur: 5 });
     await this.say('i6');
     await this.wait(0.3);
     N.driver.show(false); N.kids[0].show(false); N.extras[0].show(false); N.extras[1].show(false);
@@ -515,12 +603,12 @@ class Game3D {
     const h = this.hero, L = this.level.spawns;
     h.cine = false; h.setCarry(true);
     if (fromCp) { h.place(L.street.x, 0, L.street.z, Math.PI); this.cam.snapBehind(h.pos, Math.PI); }
-    else this.cam.release(h.pos);
+    else this.cam.release(h.pos, Math.PI);   // hand the camera back looking straight down the street
     this.npc.tea.show(true); this.npc.tea.place(L.tea.x, 0, L.tea.z, 0.7);
     if (!this.cp || this.cp.seg !== 'street') this.saveCp('street', V(L.street.x, 0, L.street.z), Math.PI);
-    this.street = { toks: [false, false, false, false], ballDone: false, kidsOn: false };
+    this.street = { toks: [false, false, false], ballDone: false, kidsOn: false, thief: 0 };
     for (const [i, k] of this.npc.kids.entries()) { k.show(true); k.place(L.kids[i].x, 0, L.kids[i].z, -1.2 + i); }
-    this.ball.p.set(10.5, 0.17, -61); this.ball.v.set(0, 0, 0); this.ball.live = true; this.ball.m.visible = true; this.ball.kicked = false;
+    this.ball.p.copy(L.ball); this.ball.v.set(0, 0, 0); this.ball.live = true; this.ball.m.visible = true; this.ball.kicked = false;
     this.play('street');
     if (!fromCp) this.toast(this.isTouch ? { ar: 'الإبهام الشمال للمشي (زقّه للآخر تجري)، واسحب على اليمين للكاميرا', en: 'Left thumb moves (push it all the way to sprint), drag the right side to look' } : { ar: 'WASD للمشي، الماوس للكاميرا، Shift للجري، Space للنط، J للنبّوت', en: 'WASD move, mouse look, Shift sprint, Space jump, J or click: staff' }, 4.5);
   }
@@ -539,7 +627,7 @@ class Game3D {
       t.x += t.vx * dt * k; t.z += t.vz * dt * k;
       t.tok.root.position.set(t.x, 0, t.z);
       t.tok.lean.position.y = Math.abs(Math.sin(t.z * 1.7 + t.x)) * 0.03;
-      if (!t.honk && d < 16) { t.honk = true; sfx.horn(); this.voice.bark(['s1', 's2'], 'tok', 6); if (this.streetHint !== 'tok') { this.streetHint = 'tok'; this.hint('tok', { ar: 'توك توك جاي! اتفادى على جنب', en: 'Tok-tok coming! Step aside' }, 2.2); } }
+      if (!t.honk && d < 16) { t.honk = true; sfx.horn(); this.voice.bark(['s1', 's2'], 'tok', 6); if (this.streetHint !== 'tok' && !this.stickyOn()) { this.streetHint = 'tok'; this.hint('tok', { ar: 'توك توك جاي! اتفادى على جنب', en: 'Tok-tok coming! Step aside' }, 2.2); } }
       // collision: oriented box vs the hero cylinder
       const yaw = Math.atan2(t.vx, t.vz), c = Math.cos(yaw), s = Math.sin(yaw);
       const lx = (hp.x - t.x) * c - (hp.z - t.z) * s, lz = (hp.x - t.x) * s + (hp.z - t.z) * c;
@@ -550,41 +638,52 @@ class Game3D {
         this.fx.emit(hp.x, 0.5, hp.z, 14, { speed: 3, up: 1.5 });
         sfx3.bump();
       }
-      if (t.z > hp.z + 30 || Math.abs(t.x) > 40 || t.z > -2 && t.vz > 0 && t.z > hp.z + 10 || (t.vz > 0 && t.z > -139.5 && t.z0 < -139.5)) { this.scene.remove(t.tok.root); this.streetToks.splice(i, 1); }
+      const bz = this.level.spawns.marks.barrier - 1.2; // a tok-tok coming up from the market stops at the barrier
+      if (t.z > hp.z + 30 || Math.abs(t.x) > 40 || t.z > PLAZA_Z - 2 && t.vz > 0 && t.z > hp.z + 10 || (t.vz > 0 && t.z > bz && t.z0 < bz)) { this.scene.remove(t.tok.root); this.streetToks.splice(i, 1); }
     }
   }
   segStep(dt, I) {
     const h = this.hero, z = h.pos.z;
     if (this.seg === 'street') {
-      const S = this.street;
-      if (!S.toks[0] && z < -8) { S.toks[0] = true; this.spawnStreetTok(-0.6, -95, 0, 6.5); }
-      if (!S.toks[1] && z < -74) { S.toks[1] = true; const t = this.spawnStreetTok(30, -100, -9, 0, 0xffd07a); t.z0 = -100; }
-      if (!S.toks[2] && z < -142) { S.toks[2] = true; const t = this.spawnStreetTok(2.0, -215, 0, 7, 0xa0e0a0); t.z0 = -215; }
-      if (!S.toks[3] && z < -150) { S.toks[3] = true; const t = this.spawnStreetTok(-0.3, -232, 0, 7.5); t.z0 = -232; }
+      const S = this.street, M = this.level.spawns.marks;
+      // one head-on tok-tok, one crossing at the side alley, one coming out of the market after the barrier
+      if (!S.toks[0] && z < PLAZA_Z - 6) { S.toks[0] = true; this.spawnStreetTok(-0.6, M.wall + 6, 0, 6.5); }
+      if (!S.toks[1] && z < PLAZA_Z + 6) { S.toks[1] = true; const t = this.spawnStreetTok(30, M.cross, -9, 0, 0xffd07a); t.z0 = M.cross; }
+      if (!S.toks[2] && z < M.barrier - 1.5) { S.toks[2] = true; const t = this.spawnStreetTok(-1.2, -205, 0, 7, 0xa0e0a0); t.z0 = -205; }
       this.stepStreetToks(dt);
       this.kidsStep(dt);
-      for (const L of this.level.laundry) if (L.z < 0 && L.z > -190 && z - L.z < 9 && z - L.z > 0) this.hint('laundry' + (L.z > -100 ? 0 : 1), { ar: 'غسيل واطي! اتزحلق تحته', en: this.isTouch ? 'Low laundry! Slide under it (slide button)' : 'Low laundry! Slide under it (Ctrl or C)' }, 2.4, 'slide');
-      for (const w of h.body.walls) if (w.box.kind === 'laundry') this.voice.bark('s5', 'laundry', 10);
-      if (z < -71 && z > -79) this.hint('vault', { ar: 'اجري ونُط عشان تعدّي من فوق الحاجات الواطية', en: 'Run and jump to vault over low obstacles' }, 2.6, 'jump');
-      if (z < -128 && z > -136) this.hint('climb', { ar: 'اجري على الحيطة ونُط... هتطلع عليها', en: 'Run at the wall and jump to climb it' }, 2.6, 'jump');
-      if (z < -186) { this.street = null; for (const t of this.streetToks) this.scene.remove(t.tok.root); this.streetToks = []; for (const k of this.npc.kids) k.show(false); this.ball.live = false; this.ball.m.visible = false; this.npc.tea.show(false); this.run(() => this.cutSnatch()); }
+      this.thiefGlimpse(dt);
+      // obstacle hints stay up from 9 m before the obstacle until he is past it
+      for (const L of this.level.laundry) if (L.z < PLAZA_Z && L.z > -190 && z - L.z < 9 && z - L.z > -0.4 && h.pos.y < 1) this.stickyHint('laundry', { ar: 'غسيل واطي! اتزحلق تحته (أو امشي عليه وهتوطّي)', en: this.isTouch ? 'Low laundry! Slide button, or just walk into it and he ducks' : 'Low laundry! Slide (Ctrl or C), or just walk into it and he ducks' }, 'slide');
+      for (const w of h.body.walls) if (w.box.kind === 'laundry' && !w.box.barked) { w.box.barked = true; this.voice.bark('s5', 'laundry', 10); }
+      if (z < M.wall + 9 && z > M.wall + 0.5 && h.pos.y < 0.5) this.stickyHint('vault', { ar: 'اجري ونُط عشان تعدّي من فوق السور الواطي', en: 'Run and jump to vault the low wall' }, 'jump');
+      if (z < M.barrier + 9 && z > M.barrier + 0.5 && h.pos.y < 1.5) this.stickyHint('climb', { ar: 'اجري على الحاجز ونُط... هتطلع عليه', en: 'Run at the barrier and jump to climb it' }, 'jump');
+      if (z < -186) { this.street = null; this.clearSticky(); for (const t of this.streetToks) this.scene.remove(t.tok.root); this.streetToks = []; for (const k of this.npc.kids) k.show(false); this.ball.live = false; this.ball.m.visible = false; this.npc.tea.show(false); this.npc.thief.show(false); this.run(() => this.cutSnatch()); }
     } else if (this.seg === 'market') this.marketStep(dt);
     else if (this.seg === 'roofs') this.roofsStep(dt);
     else if (this.seg === 'jetty') this.jettyStep(dt);
     else if (this.seg === 'fight') { /* driven by Fight + onFight */ }
+    this.stickyTick();
+  }
+  // the thief, seen early: he watches Radwan's crate from the side alley, then slips away (pays off at the gate)
+  thiefGlimpse() {
+    const S = this.street, T = this.npc.thief, h = this.hero, M = this.level.spawns.marks;
+    if (S.thief === 0 && h.pos.z < PLAZA_Z + 4) { S.thief = 1; T.show(true); T.place(-8.4, 0, M.cross + 2.3, Math.PI / 2); T.anim.play('idle', { loop: true }); }
+    if (S.thief === 1 && h.pos.z < M.cross + 5) { S.thief = 2; this.mover(T, -27, M.cross + 2.3, 6.2).then(() => { if (this.seg === 'street') T.show(false); }); }
   }
   kidsStep(dt) {
     const S = this.street, h = this.hero, b = this.ball, K = this.npc.kids;
     // kids jog around the ball
     K.forEach((k, i) => {
       if (!k.active) return;
-      const tx = b.live && !b.kicked ? b.p.x + Math.cos(i * 2.1 + this.elapsed) * 1.6 : 9 + i * 1.5, tz = b.live && !b.kicked ? b.p.z + Math.sin(i * 2.1 + this.elapsed) * 1.6 : -58 - i * 3;
+      const tx = b.live && !b.kicked ? b.p.x + Math.cos(i * 2.1 + this.elapsed) * 1.6 : 9 + i * 1.5, tz = b.live && !b.kicked ? b.p.z + Math.sin(i * 2.1 + this.elapsed) * 1.6 : this.level.spawns.kids[0].z - 1 - i * 3;
       const d = k.steer(dt, tx, tz, 2.2);
       k.move(dt, false); k.locoAnim(d > 0.3 ? 2 : 0);
       if (d < 0.3 || b.kicked) k.yaw += ((Math.atan2(h.pos.x - k.pos.x, h.pos.z - k.pos.z) - k.yaw + 9.42) % 6.28 - 3.14) * Math.min(1, 3 * dt);
     });
     // they kick the ball to him when he passes
-    if (b.live && !b.kicked && h.pos.z < -50 && h.pos.z > -64) {
+    const L = this.level.spawns;
+    if (b.live && !b.kicked && h.pos.z < L.ball.z + 11 && h.pos.z > L.ball.z - 3) {
       b.kicked = true;
       const dx = h.pos.x - b.p.x + 0.5, dz = h.pos.z - 4 - b.p.z, d = Math.hypot(dx, dz);
       b.v.set(dx / d * 9, 3.2, dz / d * 9);
@@ -595,8 +694,8 @@ class Game3D {
   kickBall() {
     const b = this.ball; if (b.scored) return;
     b.scored = true;
-    // back to the kids' goal (two stones at x 14, z -64)
-    const dx = 14 - b.p.x, dz = -64 - b.p.z, d = Math.hypot(dx, dz);
+    // back to the kids' goal (two stones)
+    const G = this.level.spawns.goal, dx = G.x - b.p.x, dz = G.z - b.p.z, d = Math.hypot(dx, dz);
     b.v.set(dx / d * 13, 4.2, dz / d * 13);
     sfx.kick();
     setTimeout(() => { if (this.seg === 'street') { this.voice.say('s4', 2); sfx3.cheer(); } }, 650);
@@ -920,10 +1019,16 @@ class Game3D {
     if (!this.cp || this.cp.seg !== 'roofs' || (this.cp.sub || 'alley') !== sub) this.saveCp('roofs', h.pos, h.yaw, sub);
     this.play('roofs');
     setTimeout(() => { if (this.seg === 'roofs') this.voice.say('u1', 2); }, 1200);
-    if (sub === 'alley') setTimeout(() => this.hint('crates', { ar: 'اطلع على الصناديق، وبعدين البلكونة، وبعدين السطح', en: 'Up the crates, then the balcony, then the roof' }, 3.5, 'jump'), 3000);
   }
   roofsStep(dt) {
     const h = this.hero, p = h.pos, L = this.level.spawns;
+    // the way up is the crates on the left: arrow + ring + a hint that stays until he is up on the balcony
+    const atStart = this.roofCp === 'alley' && p.z > -919 && p.y < 2.7;
+    this.roofCue.visible = atStart;
+    if (atStart) {
+      const k = 1 + 0.15 * Math.sin(this.elapsed * 6); this.roofCueRing.scale.set(k, k, k); this.roofCueRing.material.opacity = p.y > 1 ? 0.25 : 0.85;
+      if (this.elapsed - this.segStart > 2.2) this.stickyHint('crates', { ar: 'الطريق لفوق: الصناديق اللي على الشمال، وبعدين البلكونة، وبعدين السطح', en: 'The way up: the crates on the left, then the balcony, then the roof' }, 'jump');
+    }
     if (this.roofCp !== 'r1' && this.roofCp !== 'r5' && p.y > ROOF.r1 - 0.1 && p.z < -918) { this.roofCp = 'r1'; this.saveCp('roofs', V(p.x, p.y, p.z), h.yaw, 'r1'); }
     if (this.roofCp === 'r1' && p.y > ROOF.r5 - 0.2 && p.z < -1000.5) { this.roofCp = 'r5'; this.saveCp('roofs', V(p.x, p.y, p.z), h.yaw, 'r5'); }
     if (p.z < -994 && p.z > -1000 && Math.abs(p.x) < 1.4 && p.y < ROOF.b) this.hint('walljump', { ar: 'نُط على الحيطة، ونُط تاني وانت لازق فيها', en: 'Jump at a wall, then jump again off it' }, 3, 'jump');
@@ -1006,10 +1111,10 @@ class Game3D {
     this.shot({ pos: () => V(h.pos.x - 1.5, 1.85, h.pos.z - 2.6), look: () => V(h.pos.x, h.pos.y + 1.5, h.pos.z), fov: 40, blend: 0.6 });
     await this.say(this.mangoes >= 12 ? 'j4' : 'j5');
     // the white pigeon lands on the canopy
-    const pg = this.pigeons.add(0.6, 2.6, F.z + 0.5, true);
+    const pg = this.pigeons.add(0.6, 2.8, F.z + 0.5, true);
     pg.state = 'perch';
-    this.cutStep = (dt) => { follow(dt); pg.root.position.set(0.6, 2.62 + this.ferryDeckLocal * 0, F.z + 0.5); };
-    this.shot({ pos: () => V(2.6, 2.4, F.z + 3.2), look: () => V(0.6, 2.4, F.z + 0.5), fov: 38, blend: 0.6 });
+    this.cutStep = (dt) => { follow(dt); pg.root.position.set(0.6, 2.8, F.z + 0.5); };
+    this.shot({ pos: () => V(3.4, 3.6, F.z + 4.2), look: () => V(0.6, 2.85, F.z + 0.5), fov: 38, blend: 0.6 });
     await this.say('j6');
     this.shot({ pos: () => V(-14, 3, F.z + 22), pos2: () => V(-20, 9, F.z + 34), look: () => V(0, 1, F.z - 8), fov: 50, blend: 1.2, dur: 5 });
     await this.wait(2.4);
@@ -1064,12 +1169,12 @@ class Game3D {
   }
   retry() { this.ui.screen(null); this.state = 'play'; this.restoreCp(); }
   pause() { if (this.state !== 'play') return; this.state = 'paused'; this.ui.screen('screen-pause'); clearInput3D(); I3.enabled = false; this.voice.stop(); }
-  resume() { if (this.state !== 'paused') return; this.ui.screen(null); this.state = 'play'; I3.enabled = this.mode === 'play'; clearInput3D(); this.last = performance.now(); }
+  resume() { if (this.state !== 'paused') return; audioInit('resume'); this.ui.screen(null); this.state = 'play'; I3.enabled = this.mode === 'play'; clearInput3D(); this.last = performance.now(); }
   restartCp() { this.ui.screen(null); this.state = 'play'; this.restoreCp(); }
   again() { this.ui.screen(null); this.state = 'play'; this.resetRun(); this.cp = this.defaultCp('street'); this.restoreCp(); }
   exit() {
     this.active = false; cancelAnimationFrame(this.raf);
-    this.voice.stop(); this.voice.hide(); this.engine.stop(); clearInput3D(); I3.enabled = false; I3.bot = null;
+    this.voice.stop(); this.voice.hide(); this.engine.stop(); setAmbient(0); clearInput3D(); I3.enabled = false; I3.bot = null;
     $('c3d').classList.add('hidden'); $('bars3d').classList.add('hidden'); this.clearWorldUi();
     removeEventListener('resize', this._onResize);
     document.body.classList.remove('mode3d');

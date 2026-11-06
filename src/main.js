@@ -3,7 +3,7 @@ import { loadAll } from './gfx.js';
 import { World } from './world.js';
 import { UI } from './ui.js';
 import { initInput, pollInput, input, clearInput } from './input.js';
-import { audioInit, loadMusic, playMusic, setSound, soundOn, sfx } from './audio.js';
+import { audioInit, audioSuspend, audioWake, audioDebug, loadMusic, playMusic, setSound, soundOn, sfx } from './audio.js';
 import { INTRO, FINALE, HINTS } from './strings.js';
 
 const Q = new URLSearchParams(location.search);
@@ -16,7 +16,8 @@ if (!isTouch) document.body.classList.add('desktop');
 
 const ui = new UI();
 const stage = document.getElementById('stage');
-const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
+// MSAA on (cheap on phone GPUs, which resolve it on-chip); ?aa=0 turns it off for software-GL test runs
+const renderer = new THREE.WebGLRenderer({ antialias: Q.get('aa') !== '0', alpha: false, powerPreference: 'high-performance' });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0x1a0b05);
 stage.appendChild(renderer.domElement);
@@ -30,6 +31,7 @@ let world = null;
 let state = 'loading';
 const game = { state: () => state, stats: { fpsSamples: [], segTimes: {}, deaths: 0, coverChecks: 0, heroCovered: 0, obstacleCovered: 0, coveredWhat: {} }, log: [] };
 window.__saidi = game;
+game.audio = audioDebug;
 const glog = (...a) => { const s = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '); game.log.push(s); console.log('[saidi]', s); };
 
 function resize() {
@@ -89,8 +91,8 @@ function toTitle() {
 
 // first gesture: audio, fullscreen, landscape lock
 let gestured = false;
-function gesture() {
-  audioInit();
+function gesture(e) {
+  audioInit(e && e.type);
   if (!gestured) {
     gestured = true;
     loadMusic('title', 'assets/audio/title.mp3');
@@ -103,8 +105,9 @@ function gesture() {
     }
   }
 }
-addEventListener('pointerdown', gesture, { capture: true });
-addEventListener('keydown', gesture, { capture: true });
+// iOS only treats touchend / click as a gesture that may start audio (pointerdown does not), and the 3D touch
+// layer cancels the synthetic click, so listen to all of them on window in the capture phase
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, gesture, { capture: true, passive: true });
 
 // ---------------------------------------------------------------- buttons
 const on = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); sfx.tap(); fn(); });
@@ -117,7 +120,7 @@ on('btn-sound', toggleSound); on('btn-sound2', toggleSound);
 const toggleSubs = () => ui.setSubs(!ui.subs);
 on('btn-subs', toggleSubs); on('btn-subs2', toggleSubs);
 on('btn-pause', () => (in3D() ? g3.pause() : pause()));
-on('btn-resume', () => (in3D() ? g3.resume() : resume()));
+on('btn-resume', () => { audioInit('resume'); if (in3D()) g3.resume(); else resume(); });
 on('btn-restart-cp', () => { if (in3D()) return g3.restartCp(); ui.screen(null); world.restartFromCheckpoint(); resume(); });
 on('btn-menu', () => toTitle());
 on('btn-menu2', () => toTitle());
@@ -192,7 +195,10 @@ function onFinish() {
   ui.dialog(FINALE(world.mangoes), 'cut_finale', () => { state = 'end'; ui.end(res); glog('end-screen'); });
   if (DEBUG_AUTO) autoAdvance();
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) { if (in3D()) g3.pause(); else pause(); } });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (in3D()) g3.pause(); else pause(); audioSuspend(); }
+  else if (gestured) audioWake('visible');
+});
 
 // ---------------------------------------------------------------- touch-button coverage check
 // Counts frames where an on-screen thumb button overlaps the hero or an obstacle (the tests read it).

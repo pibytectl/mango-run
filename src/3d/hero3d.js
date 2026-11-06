@@ -6,6 +6,7 @@ import * as THREE from '../../vendor/three.module.min.js';
 import { A } from './assets3d.js';
 import { Anim, twoBoneIK } from './anim.js';
 import { moveBody, fits } from './physics.js';
+import { rimFillModel } from './shade.js';
 
 const G_UP = 22, G_DOWN = 30, JUMP_V = 7.6;
 const SPD = { walk: 2.0, run: 6.2, sprint: 8.8, air: 9, accel: 34, decel: 26 };
@@ -24,6 +25,7 @@ export class Hero {
     const g = A.glb.hero;
     this.model = g.scene;
     this.model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+    rimFillModel(this.model, { fill: 0.24, rimK: 0.6 }, 'heroRim');
     this.root = new THREE.Group(); this.root.add(this.model); scene.add(this.root);
     this.anim = new Anim(this.model, A.clips.hero);
     this.bones = {}; this.model.traverse((o) => { if (o.isBone) this.bones[o.name] = o; });
@@ -157,8 +159,14 @@ export class Hero {
     // slide / dodge
     if (I.slidePressed && b.onGround) {
       if (this.inCombat) { this.startDodge(mx, mz, mag); return; }
-      if (Math.hypot(b.vel.x, b.vel.z) > 3) { this.startSlide(); return; }
+      // any speed: from a standstill it is a short duck-and-scoot (toward the stick, else where he faces)
+      this.startSlide(mx, mz, mag); return;
     }
+    // pushing into a low laundry line ducks under it on its own (nobody gets stuck there)
+    if (b.onGround && mag > 0.3 && b.walls.some((w) => w.box.kind === 'laundry' && w.box.y0 > b.pos.y + 0.8 && mx * w.nx + mz * w.nz < -0.3)) {
+      this.duckT = (this.duckT || 0) + dt;
+      if (this.duckT > 0.3) { this.duckT = 0; this.emit('duck'); this.startSlide(mx, mz, mag); return; }
+    } else this.duckT = 0;
     if (I.blockHeld && b.onGround && this.inCombat) { this.startBlock(); return; }
     if (this.attackBuf > 0 && (b.onGround || this.airT < 0.3)) { this.attackBuf = 0; this.startAttack(0); return; }
 
@@ -342,10 +350,12 @@ export class Hero {
       this.anim.play('jump', { fade: 0.12, at: 0.55 });
     }
   }
-  startSlide() {
+  startSlide(mx = 0, mz = 0, mag = 0) {
     const b = this.body, sp = Math.hypot(b.vel.x, b.vel.z);
-    this.slideDir = [b.vel.x / sp, b.vel.z / sp];
-    this.slideV = Math.min(10.5, sp * 1.18 + 0.8);
+    if (sp > 3) this.slideDir = [b.vel.x / sp, b.vel.z / sp];
+    else if (mag > 0.2) this.slideDir = [mx, mz];
+    else this.slideDir = [Math.sin(this.yaw), Math.cos(this.yaw)];
+    this.slideV = sp > 3 ? Math.min(10.5, sp * 1.18 + 0.8) : 5.6;
     b.h = 0.9;
     this.setState('slide');
     this.anim.play('slide', { fade: 0.06, speed: 1.07 / 0.8 });
@@ -466,7 +476,7 @@ export class Hero {
       return 'down';
     }
     this.setState('hit'); this.anim.play('hit_react', { fade: 0.04, restart: true });
-    b.vel.x = -dx / d * 4; b.vel.z = -dz / d * 4; this.iframes = 0.55;
+    b.vel.x = -dx / d * 4; b.vel.z = -dz / d * 4; this.iframes = 0.85;
     this.yaw = Math.atan2(dx, dz);
     return 'hit';
   }

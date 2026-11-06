@@ -98,11 +98,9 @@ button { border: 0; cursor: pointer; color: inherit; background: none; touch-act
   box-shadow: 0 0 0 2px #3a1a08, 0 4px 12px rgba(0,0,0,0.5); background: #3a1a08; }
 .portrait img { width: 100%; height: 100%; object-fit: cover; }
 .hud-stack { display: flex; flex-direction: column; gap: 4px; padding-top: 2px; }
-#hearts { display: flex; gap: 3px; height: 22px; }
-.heart { width: 24px; height: 22px; position: relative; }
-.heart::before { content: '♥'; position: absolute; inset: -6px 0 0 0; font-size: 26px; line-height: 1; color: #e2342c;
-  text-shadow: 0 0 0 #000, 0 2px 0 #6a0d08, 0 0 6px rgba(255,80,60,0.6); font-family: sans-serif !important; }
-.heart.empty::before { color: rgba(60, 20, 10, 0.75); text-shadow: 0 0 0 #000; }
+#hearts { display: flex; gap: 3px; height: 24px; }
+.heart { width: 26px; height: 25px; display: block; overflow: visible; filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.75)); }
+.heart.full { filter: drop-shadow(0 1px 1.5px rgba(0,0,0,0.75)) drop-shadow(0 0 3px rgba(255,80,60,0.45)); }
 .heart.pop { animation: pop .4s; }
 @keyframes pop { 0% { transform: scale(1.6); } 100% { transform: scale(1); } }
 .stamina { width: 132px; height: 9px; border-radius: 99px; background: rgba(20, 10, 4, 0.75); border: 1px solid rgba(255, 210, 140, 0.4); overflow: hidden; }
@@ -286,7 +284,7 @@ body:not(.mode3d) .only3d { display: none !important; }
 #c3d.veh .b-jump, #c3d.veh .b-slide, #c3d.veh .b-block { display: none; }
 #c3d.veh .b-atk .ico { display: none; }
 #c3d.veh .b-atk .boost { display: block; width: 50%; height: 50%; }
-#c3d:not(.fight) .b-block { opacity: 0.45; }
+#c3d:not(.fight) .b-block { display: none; }
 body.desktop #c3d .b3, body.desktop #stick3d { display: none; }
 
 /* subtitles */
@@ -312,13 +310,24 @@ body.mode3d:not(.cut3d) #subs3d { bottom: calc(max(8px, var(--safe-b)) + 2px); m
 #vig3d.flash { animation: vig .5s ease-out; }
 @keyframes vig { 0% { opacity: 1; } 100% { opacity: 0; } }
 
+/* toast moved down when it would cover an enemy health bar */
+#toast.low { top: auto; bottom: calc(max(8px, var(--safe-b)) + 62px); }
+/* off-screen attacker: a pulsing "!" with an arrow on the screen edge it is coming from */
+.offwarn { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: rgba(40, 10, 4, 0.55); border: 2px solid #ff8a3a; color: #ffd36a; pointer-events: none; z-index: 4; animation: hintPulse 0.6s infinite; }
+.offwarn b { font: 900 26px sans-serif; line-height: 1; }
+.offwarn i { position: absolute; width: 0; height: 0; border: 9px solid transparent; }
+.offwarn.l { left: calc(max(10px, var(--safe-l)) + 30px); } .offwarn.l i { left: -16px; border-right-color: #ff8a3a; }
+.offwarn.r { right: calc(max(10px, var(--safe-r)) + 6px); } .offwarn.r i { right: -16px; border-left-color: #ff8a3a; }
+.offwarn.b { top: auto; bottom: calc(max(8px, var(--safe-b)) + 40px); } .offwarn.b i { bottom: -16px; border-top-color: #ff8a3a; }
+.offwarn.hot { background: rgba(160, 30, 10, 0.75); border-color: #ffd36a; }
+.offwarn.hidden { display: none; }
+
 /* enemy health over their heads */
 .ehp { position: absolute; width: 54px; height: 7px; margin: -3px 0 0 -27px; border-radius: 4px; background: rgba(20, 8, 3, 0.7); border: 1px solid rgba(255, 220, 160, 0.5); overflow: hidden; }
 .ehp i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff7a3a, #ffd36a); transition: width .15s; }
 .ehp.warn { border-color: #ff6a2a; box-shadow: 0 0 10px rgba(255, 100, 40, 0.9); }
 
-/* half heart */
-.heart.half::before { background: linear-gradient(90deg, #e2342c 50%, rgba(60, 20, 10, 0.75) 50%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; }
 .slot.gain { animation: pop .35s; }
 
 /* end screen extras */

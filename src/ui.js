@@ -3,6 +3,20 @@ import { sfx } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 
+// Hearts are inline SVG, not the ♥ text glyph: iOS draws that glyph as a colour emoji that ignores CSS colour,
+// so full, half and empty all looked the same on an iPhone. Full = red, half = left half red with a light
+// split line, empty = dark hollow with an outline.
+const HEART = 'M12 21.2 3.4 12.6C1 10.2 1 6.4 3.4 4.1 5.6 2 9.2 2.1 11.3 4.3L12 5l.7-.7c2.1-2.2 5.7-2.3 7.9-.2 2.4 2.3 2.4 6.1 0 8.5Z';
+function heartSVG(state, i, pop) {
+  const fill = state === 'empty' ? '' : `<path d="${HEART}" fill="#e2342c"${state === 'half' ? ` clip-path="url(#hh${i})"` : ''}/>`
+    + `<path d="M7.2 5.6c-1.6.2-2.7 1.5-2.8 3" stroke="#ffb3a6" stroke-width="1.6" stroke-linecap="round" fill="none"${state === 'half' ? ` clip-path="url(#hh${i})"` : ''}/>`;
+  return `<svg class="heart ${state}${pop ? ' pop' : ''}" viewBox="0 0 24 23" aria-hidden="true">`
+    + (state === 'half' ? `<clipPath id="hh${i}"><rect x="0" y="0" width="12" height="23"/></clipPath>` : '')
+    + `<path d="${HEART}" fill="rgba(40,14,8,0.78)"/>${fill}`
+    + (state === 'half' ? '<path d="M12 4.6V21" stroke="#ffe1c2" stroke-width="1.3"/>' : '')
+    + `<path d="${HEART}" fill="none" stroke="${state === 'empty' ? '#c98a3a' : '#2a0905'}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+}
+
 export class UI {
   constructor() {
     this.worldUI = $('world-ui');
@@ -30,8 +44,11 @@ export class UI {
 
   // ---------- HUD ----------
   setHearts(n, anim) {
-    const el = $('hearts');
-    el.innerHTML = [0, 1, 2].map((i) => `<div class="heart${i < n ? '' : ' empty'}${anim && i === n ? ' pop' : ''}"></div>`).join('');
+    $('hearts').innerHTML = [0, 1, 2].map((i) => heartSVG(i < n ? 'full' : 'empty', i, anim && i === n)).join('');
+  }
+  // 3D: health in half hearts (6 = three full hearts)
+  setHalfHearts(hp, popIdx) {
+    $('hearts').innerHTML = [0, 1, 2].map((i) => heartSVG(hp >= i * 2 + 2 ? 'full' : hp === i * 2 + 1 ? 'half' : 'empty', i, i === popIdx)).join('');
   }
   setMangoes(n, anim) {
     $('mango-count').textContent = num(n);
@@ -55,11 +72,21 @@ export class UI {
   }
   flashStamina() { const s = $('slot-staff'); s.classList.remove('bump'); void s.offsetWidth; s.classList.add('bump'); }
 
-  toast(h, dur = 3) {
+  // key: optional id so a caller can refresh the same message without replaying the entry animation
+  toast(h, dur = 3, key) {
     const t = $('toast');
+    const same = key && this.toastKey === key && this.toastT > 0;
+    this.toastKey = key || null;
+    this.toastT = dur;
+    if (same) return;
     t.querySelector('.ar').textContent = h.ar; t.querySelector('.en').textContent = h.en;
     t.classList.remove('hidden'); t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
-    this.toastT = dur;
+  }
+  hideToast(key) { if (key && this.toastKey !== key) return; this.toastT = 0; this.toastKey = null; $('toast').classList.add('hidden'); }
+  // counts down the toast and the button hint; both the 2.5D and the 3D loop call it every frame
+  tickToast(dt) {
+    if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) { this.toastKey = null; $('toast').classList.add('hidden'); } }
+    if (this.hintT > 0) { this.hintT -= dt; if (this.hintT <= 0 && this.hintEl) this.hintEl.classList.remove('hint'); }
   }
   banner(seg) {
     const b = $('banner');
@@ -96,7 +123,7 @@ export class UI {
   clearWorld() {
     for (const b of this.bubbles) b.el.remove(); for (const f of this.floats) f.el.remove(); for (const w of this.warns) w.el.remove();
     this.bubbles = []; this.floats = []; this.warns = [];
-    $('toast').classList.add('hidden'); $('banner').classList.add('hidden');
+    $('toast').classList.add('hidden'); $('banner').classList.add('hidden'); this.toastT = 0; this.toastKey = null;
     if (this.hintEl) this.hintEl.classList.remove('hint');
   }
   updateWorldUI(world, cx, cy, vw, vh, frameDt) {
@@ -135,8 +162,7 @@ export class UI {
       f.el.style.left = sx + 'px'; f.el.style.top = sy + 'px'; f.el.style.opacity = Math.min(1, f.t * 2);
     }
     for (let i = this.warns.length - 1; i >= 0; i--) { const w = this.warns[i]; w.t -= dt; if (w.t <= 0) { w.el.remove(); this.warns.splice(i, 1); } }
-    if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) $('toast').classList.add('hidden'); }
-    if (this.hintT > 0) { this.hintT -= dt; if (this.hintT <= 0 && this.hintEl) this.hintEl.classList.remove('hint'); }
+    this.tickToast(dt);
     this.setStamina(world.hero.stamina);
     this.setTime(world.timeLeft, 270);
   }

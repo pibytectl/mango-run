@@ -3,11 +3,53 @@ let ctx = null, master, musicGain, sfxGain, voiceGain, noiseBuf;
 const music = { buffers: {}, src: null, name: null };
 let enabled = true;
 
-export function audioInit() {
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+// iOS notes: Web Audio counts as "ambient" (muted by the silent switch) unless the page asks for playback;
+// only touchend/click (not pointerdown) are user gestures there; an app switch, a call or the lock screen
+// leaves the context "interrupted" (not "suspended"). audioInit() is called from every gesture and resumes
+// from both states; audioSuspend/audioWake follow page visibility.
+export const audioLog = [];
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let unlocked = false, htmlEl = null, hidden = false;
+function setPlayback() {
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) {}
+}
+// fallback for iOS without navigator.audioSession: a looping silent <audio> element puts the page's audio
+// session in playback mode, so Web Audio is heard with the silent switch on (iOS only: on Android an
+// <audio> element would show a media notification)
+function silentWavUrl() {
+  const n = 2205, b = new ArrayBuffer(44 + n), v = new DataView(b), w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 22050, true); v.setUint32(28, 22050, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+}
+function htmlUnlock() {
+  if (!IOS || (navigator.audioSession && 'type' in navigator.audioSession)) return;
+  if (!htmlEl) {
+    htmlEl = document.createElement('audio');
+    htmlEl.setAttribute('playsinline', ''); htmlEl.setAttribute('x-webkit-airplay', 'deny');
+    htmlEl.preload = 'auto'; htmlEl.loop = true; htmlEl.src = silentWavUrl();
+  }
+  if (htmlEl.paused && !hidden) { audioLog.push(['html-audio', 'play']); try { const p = htmlEl.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+}
+function tryResume(why) {
+  if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+  try { const p = ctx.resume(); if (p && p.then) p.then(() => audioLog.push(['resumed', why, ctx.state]), (e) => audioLog.push(['resume failed', why, String(e)])); } catch (e) {}
+}
+export function audioInit(why = 'gesture') {
+  setPlayback();
+  htmlUnlock();
+  if (ctx) {
+    tryResume(why);
+    if (!unlocked) unlockTick();
+    return;
+  }
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   ctx = new AC();
+  ctx.onstatechange = () => { audioLog.push(['state', ctx.state]); if (ctx.state === 'interrupted' && !hidden) setTimeout(() => tryResume('interrupted'), 400); };
+  audioLog.push(['created', ctx.state]);
+  tryResume(why);
   master = ctx.createGain(); master.gain.value = enabled ? 1 : 0; master.connect(ctx.destination);
   const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(master);
   musicGain = ctx.createGain(); musicGain.gain.value = 0.5; musicGain.connect(comp);
@@ -16,7 +58,26 @@ export function audioInit() {
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  unlockTick();
 }
+// a one-sample silent buffer started inside the gesture: the classic iOS output unlock
+function unlockTick() {
+  try { const b = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); unlocked = true; } catch (e) {}
+}
+export function audioSuspend() {
+  hidden = true;
+  if (htmlEl && !htmlEl.paused) htmlEl.pause();
+  if (ctx && ctx.state === 'running') { try { ctx.suspend(); } catch (e) {} }
+}
+export function audioWake(why = 'visible') {
+  hidden = false;
+  if (!ctx) return;
+  setPlayback();
+  tryResume(why);
+}
+export function audioState() { return ctx ? ctx.state : 'none'; }
+// tests only (window.__saidi.audio)
+export function audioDebug() { return { ctx, htmlEl, log: audioLog, music: music.name, ambient: ambWant.name && beds[ambWant.name] && beds[ambWant.name].src ? ambWant.vol : null, ambientBed: ambWant.name, session: navigator.audioSession ? navigator.audioSession.type : null }; }
 
 export async function loadMusic(name, url) {
   try {
@@ -47,6 +108,36 @@ export function playMusic(name, vol = 0.5) {
   const g = ctx.createGain(); g.gain.value = 0; g.gain.setTargetAtTime(vol, now, 0.6);
   src.connect(g); g.connect(musicGain); src.start(now, 0.03);
   music.src = src; music.g = g; music.name = name;
+}
+// ambient beds (3D), one at a time, crossfaded: 'street' (distant traffic) and 'roof' (city from a rooftop)
+const beds = {};
+let ambWant = { name: null, vol: 0 };
+export async function loadAmbient(name, url) {
+  const b = beds[name] = beds[name] || { raw: null, buf: null, src: null, g: null };
+  try { b.raw = await (await fetch(url)).arrayBuffer(); } catch (e) { return; }
+  decodeAmbient(name);
+}
+async function decodeAmbient(name) {
+  const b = beds[name];
+  if (!ctx || !b || !b.raw || b.buf) return;
+  const raw = b.raw; b.raw = null;
+  try { b.buf = await new Promise((res, rej) => ctx.decodeAudioData(raw, res, rej)); } catch (e) { return; }
+  setAmbient(ambWant.vol, ambWant.name);
+}
+export function setAmbient(vol, name = 'street') {
+  ambWant = { name, vol };
+  if (!ctx) return;
+  for (const [k, b] of Object.entries(beds)) {
+    const v = k === name ? vol : 0;
+    if (!b.buf) { if (v > 0) decodeAmbient(k); continue; }
+    if (!b.src && v > 0) {
+      const src = ctx.createBufferSource(); src.buffer = b.buf; src.loop = true;
+      src.loopStart = 0.06; src.loopEnd = b.buf.duration - 0.06; // skip the mp3 encoder padding at both ends
+      const g = ctx.createGain(); g.gain.value = 0; src.connect(g); g.connect(master); src.start(ctx.currentTime, 0.06);
+      b.src = src; b.g = g;
+    }
+    if (b.g) b.g.gain.setTargetAtTime(v, ctx.currentTime, 0.8);
+  }
 }
 // used by the 3D mode (voices, engine and impact sounds)
 export function audioParts() { return { ctx, sfxGain, voiceGain, musicGain, noiseBuf }; }

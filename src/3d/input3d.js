@@ -1,15 +1,18 @@
 // 3D-mode input. Touch: a floating joystick under the left thumb, camera drag anywhere else, and four
 // buttons in an arc under the right thumb (attack, jump, slide/dodge, block). Desktop: WASD, mouse look
-// (pointer lock), Space, J / left click, K / right click, Shift sprint, Ctrl or C slide, Q lock-on.
+// (pointer lock), Space, J / left click, K / right click, Shift sprint, Ctrl or C slide, Q lock-on, R recentre.
+// Touch: double-tap the look area to recentre the camera behind the hero, facing down the route.
 export const I3 = {
-  mx: 0, my: 0, look: { x: 0, y: 0 }, lastLook: 0,
+  mx: 0, my: 0, look: { x: 0, y: 0 }, lastLook: 0, recenter: false,
   jumpHeld: false, blockHeld: false, sprint: false, boostHeld: false,
   pressed: { jump: false, attack: false, slide: false, lock: false, boost: false },
   touch: false, bot: null, enabled: false,
 };
 const keys = new Set();
 const btnTouch = new Map(); // touch id -> button name
-let stickId = null, stickO = null, lookId = null, lookP = null;
+let stickId = null, stickO = null, lookId = null, lookP = null, lookStart = null, lastTap = null;
+// touch look: radians per pixel (was 0.0085 / 0.0065: an 80 px flick turned the view ~40 degrees)
+const LOOK_X = 0.005, LOOK_Y = 0.0038;
 let els = null, root = null;
 
 export function initInput3D(isTouch, canvas) {
@@ -40,7 +43,9 @@ export function initInput3D(isTouch, canvas) {
         const b = btnAt(t.clientX, t.clientY);
         if (b) { btnTouch.set(id, b); press(b); vib(); continue; }
         if (t.clientX < W * 0.45 && stickId === null) { stickId = id; stickO = { x: t.clientX, y: t.clientY }; showStick(t.clientX, t.clientY); continue; }
-        if (lookId === null) { lookId = id; lookP = { x: t.clientX, y: t.clientY }; }
+        if (lookId === null) {
+          lookId = id; lookP = { x: t.clientX, y: t.clientY }; lookStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+        }
       } else if (e.type === 'touchmove') {
         if (id === stickId) {
           let dx = t.clientX - stickO.x, dy = t.clientY - stickO.y; const R = 56, l = Math.hypot(dx, dy);
@@ -52,7 +57,7 @@ export function initInput3D(isTouch, canvas) {
           I3.mx = Math.cos(a) * m; I3.my = -Math.sin(a) * m;
           showStick(stickO.x, stickO.y, Math.cos(a) * m * R, Math.sin(a) * m * R);
         } else if (id === lookId) {
-          I3.look.x += (t.clientX - lookP.x) * 0.0085; I3.look.y += (t.clientY - lookP.y) * 0.0065;
+          I3.look.x += (t.clientX - lookP.x) * LOOK_X; I3.look.y += (t.clientY - lookP.y) * LOOK_Y;
           lookP = { x: t.clientX, y: t.clientY }; I3.lastLook = performance.now();
         } else if (btnTouch.has(id)) {
           const b = btnAt(t.clientX, t.clientY), prev = btnTouch.get(id);
@@ -60,7 +65,15 @@ export function initInput3D(isTouch, canvas) {
         }
       } else {
         if (id === stickId) { stickId = null; I3.mx = 0; I3.my = 0; hideStick(); }
-        if (id === lookId) lookId = null;
+        if (id === lookId) {
+          lookId = null;
+          // a tap is short and still; two taps close together = recentre
+          const now = performance.now(), still = lookStart && Math.hypot(t.clientX - lookStart.x, t.clientY - lookStart.y) < 14 && now - lookStart.t < 260;
+          if (still) {
+            if (lastTap && now - lastTap.t < 380 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 70) { I3.recenter = true; lastTap = null; }
+            else lastTap = { x: t.clientX, y: t.clientY, t: now };
+          } else lastTap = null;
+        }
         if (btnTouch.has(id)) { release(btnTouch.get(id)); btnTouch.delete(id); }
       }
     }
@@ -71,7 +84,7 @@ export function initInput3D(isTouch, canvas) {
 
   // keyboard
   const KM = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
-    Space: 'jump', ShiftLeft: 'sprint', ShiftRight: 'sprint', KeyJ: 'attack', KeyK: 'block', ControlLeft: 'slide', KeyC: 'slide', KeyL: 'slide', KeyQ: 'lock', Tab: 'lock', KeyE: 'attack' };
+    Space: 'jump', ShiftLeft: 'sprint', ShiftRight: 'sprint', KeyJ: 'attack', KeyK: 'block', ControlLeft: 'slide', KeyC: 'slide', KeyL: 'slide', KeyQ: 'lock', Tab: 'lock', KeyE: 'attack', KeyR: 'recenter' };
   addEventListener('keydown', (e) => {
     if (!I3.enabled) return;
     const k = KM[e.code]; if (!k) return;
@@ -82,6 +95,7 @@ export function initInput3D(isTouch, canvas) {
     if (k === 'slide') I3.pressed.slide = true;
     if (k === 'lock') I3.pressed.lock = true;
     if (k === 'sprint') I3.pressed.boost = true;
+    if (k === 'recenter') I3.recenter = true;
   });
   addEventListener('keyup', (e) => { const k = KM[e.code]; if (k) keys.delete(k); });
   addEventListener('blur', () => { keys.clear(); btnTouch.clear(); stickId = lookId = null; I3.mx = I3.my = 0; I3.jumpHeld = I3.blockHeld = I3.boostHeld = false; hideStick(); });
@@ -138,9 +152,9 @@ export function readInput3D(out) {
   I3.pressed.jump = I3.pressed.attack = I3.pressed.slide = I3.pressed.lock = I3.pressed.boost = false;
   return out;
 }
-export function takeLook() { const l = { x: I3.look.x, y: I3.look.y }; I3.look.x = 0; I3.look.y = 0; return l; }
+export function takeLook() { const l = { x: I3.look.x, y: I3.look.y, recenter: I3.recenter }; I3.look.x = 0; I3.look.y = 0; I3.recenter = false; return l; }
 export function clearInput3D() {
-  keys.clear(); btnTouch.clear(); stickId = lookId = null; I3.mx = I3.my = 0; I3.look.x = I3.look.y = 0;
+  keys.clear(); btnTouch.clear(); stickId = lookId = null; lastTap = null; I3.mx = I3.my = 0; I3.look.x = I3.look.y = 0; I3.recenter = false;
   I3.jumpHeld = I3.blockHeld = I3.boostHeld = false;
   for (const k in I3.pressed) I3.pressed[k] = false;
   hideStick(); if (els) refreshBtns();
