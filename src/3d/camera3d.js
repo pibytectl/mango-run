@@ -93,8 +93,8 @@ export class ChaseCam {
     if (cam.position.y < this.pivot.y - 1.3) cam.position.y = this.pivot.y - 1.3;
     // look slightly ahead of the pivot; over the shoulder
     const ahead = o.mode === 'vehicle' ? 3 : 0.6;
-    const lx = this.pivot.x - dx * ahead, ly = this.pivot.y - (o.mode === 'vehicle' ? 0.2 : 0.05), lz = this.pivot.z - dz * ahead;
-    const rx = Math.cos(this.yaw) * 0.35, rz = -Math.sin(this.yaw) * 0.35;
+    const lx = this.pivot.x - dx * ahead, ly = this.pivot.y + (o.mode === 'vehicle' ? -0.2 : o.mode === 'fight' ? -0.05 : 0.22), lz = this.pivot.z - dz * ahead;   // on foot the view tips up a little: the lit upper floors and the sky belong in the frame
+    const sh = o.mode === 'foot' || !o.mode ? 0.5 : 0.35, rx = Math.cos(this.yaw) * sh, rz = -Math.sin(this.yaw) * sh;
     cam.position.x += rx; cam.position.z += rz;
     cam.lookAt(lx + rx, ly, lz + rz);
     this.applyShake(dt);

@@ -107,21 +107,33 @@ export class Builder {
 // jump at the wrap seam. A small inset keeps neighbouring tiles from bleeding in at low mips.
 // Round 3: vertex colours on (a per-building tint, painted ground floors), so the same facade tile no longer
 // repeats identically down the street.
-export function atlasMaterial(map) {
+export function atlasMaterial(map, glow) {
   const m = new THREE.MeshLambertMaterial({ map, vertexColors: true });
   m.userData.atlas = true;
+  // redesign: `glow` is a small mask in the atlas layout (look.js). R = a window that may be lit (about half of
+  // them are, picked per window from its place on the wall), G = an open shop bay (lit, the goods show).
+  m.userData.glowK = { value: 1 };
   m.onBeforeCompile = (sh) => {
+    sh.uniforms.uGlowMap = { value: glow || null }; sh.uniforms.uGlowK = m.userData.glowK;
     sh.vertexShader = 'attribute vec4 atl;\nvarying vec4 vAtl;\n' + sh.vertexShader.replace('#include <uv_vertex>', '#include <uv_vertex>\n  vAtl = atl;');
-    sh.fragmentShader = 'varying vec4 vAtl;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
+    sh.fragmentShader = 'varying vec4 vAtl;\nuniform sampler2D uGlowMap; uniform float uGlowK;\n' + sh.fragmentShader.replace('#include <map_fragment>', `
+      vec3 glowE = vec3(0.0);
       {
         vec2 sz = abs(vAtl.zw);
         vec2 tuv = vAtl.z < 0.0 ? clamp(vMapUv, 0.0, 1.0) : fract(vMapUv);
         tuv = tuv * 0.992 + 0.004;
         vec4 sampledDiffuseColor = textureGrad(map, vAtl.xy + tuv * sz, dFdx(vMapUv) * sz, dFdy(vMapUv) * sz);
+        ${glow ? `
+        vec2 gm = textureLod(uGlowMap, vAtl.xy + tuv * sz, 0.0).rg;
+        vec2 cell = floor(vMapUv * 2.0) + vAtl.xy * 9.0;
+        float rnd = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+        vec3 warm = mix(vec3(1.0, 0.56, 0.2), vec3(1.0, 0.8, 0.46), fract(rnd * 7.31));
+        glowE = (warm * (0.55 + 0.9 * sampledDiffuseColor.rgb) * gm.r * step(0.55, rnd) * 2.0
+               + sampledDiffuseColor.rgb * vec3(1.0, 0.8, 0.52) * gm.g * 3.4) * uGlowK;` : ''}
         diffuseColor *= sampledDiffuseColor;
-      }`);
+      }`).replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += glowE;');
   };
-  m.customProgramCacheKey = () => 'atlas';
+  m.customProgramCacheKey = () => 'atlas' + (glow ? 'g' : '');
   return m;
 }
 

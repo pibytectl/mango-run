@@ -6,7 +6,7 @@
 //   ?mission=2|3    Mission 2 or 3 (with ?debug=auto3d or ?seg3d it starts straight away; on the title each is
 //                   the pick only once the one before is finished, remembered in localStorage; Mission 3: ?seg3d=d1..d5)
 import * as THREE from '../vendor/three.module.min.js';
-import { UI } from './ui.js';
+import { UI, onTap } from './ui.js';
 import { audioInit, audioSuspend, audioWake, audioDebug, loadMusic, playMusic, setSound, soundOn, sfx } from './audio.js';
 
 const Q = new URLSearchParams(location.search);
@@ -15,6 +15,14 @@ const Q_MISSION = ['2', '3'].includes(Q.get('mission')) ? +Q.get('mission') : 1;
 // missions unlocked (1 = only the first); storage can be blocked (private mode), then only the first
 function unlocked() { try { return Math.max(1, Math.min(3, +localStorage.getItem('saidi.unlocked') || 1)); } catch (e) { return 1; } }
 function refreshMissions() { for (const n of [2, 3]) { const b = document.getElementById('btn-m' + n); if (b) b.classList.toggle('locked', unlocked() < n); } }
+// best stars per mission on the cards (saved by the end screen)
+function refreshStars() {
+  for (const c of document.querySelectorAll('.mcard')) {
+    let n = 0; try { n = +localStorage.getItem('saidi.best.' + c.dataset.m) || 0; } catch (e) { n = 0; }
+    c.querySelectorAll('.mstars i').forEach((s, i) => s.classList.toggle('on', i < n));
+    c.classList.toggle('played', n > 0);
+  }
+}
 // A phone or tablet: the primary pointer is coarse. A touchscreen laptop has touch too, but its primary
 // pointer is fine (mouse or touchpad): it starts with mouse/keyboard controls (round 3: Mzee's laptop showed
 // the touch overlay and the mouse did nothing). The 3D mode switches with the input actually used.
@@ -24,7 +32,16 @@ if (!isTouch) document.body.classList.add('desktop');
 const ui = new UI();
 const stage = document.getElementById('stage');
 // MSAA on (cheap on phone GPUs, which resolve it on-chip); ?aa=0 turns it off for software-GL test runs
-const renderer = new THREE.WebGLRenderer({ antialias: Q.get('aa') !== '0', alpha: false, powerPreference: 'high-performance' });
+// Redesign: the 3D mode draws into its own multisampled target (src/3d/post.js), so the canvas itself is made
+// without MSAA; a device that cannot do float targets (or ?post=0) gets the antialiased canvas as before.
+const wantAA = Q.get('aa') !== '0';
+let renderer = new THREE.WebGLRenderer({ antialias: wantAA && Q.get('post') === '0', alpha: false, powerPreference: 'high-performance' });
+if (wantAA && Q.get('post') !== '0') {
+  const gl = renderer.getContext();
+  if (!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'))) {
+    renderer.dispose(); renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+  }
+}
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0x1a0b05);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -66,7 +83,7 @@ async function start3D(mission = 1) {
 
 function toTitle() {
   if (g3) { g3.exit(); g3 = null; }
-  state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.clearWorld(); refreshMissions();
+  state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.clearWorld(); refreshMissions(); refreshStars();
   playMusic('title', 0.55);
 }
 
@@ -91,7 +108,7 @@ function gesture(e) {
 for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, gesture, { capture: true, passive: true });
 
 // ---------------------------------------------------------------- buttons
-const on = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); sfx.tap(); fn(); });
+const on = (id, fn) => onTap(document.getElementById(id), (e) => { e.stopPropagation(); sfx.tap(); fn(); });
 on('btn-start3d', () => start3D(1));
 for (const n of [2, 3]) on('btn-m' + n, () => { if (unlocked() >= n) start3D(n); else { const b = document.getElementById('btn-m' + n); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); } });
 on('btn-next', () => start3D(Math.min(3, (+document.body.dataset.endm || 1) + 1)));

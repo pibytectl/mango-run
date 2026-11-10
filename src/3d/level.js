@@ -5,6 +5,7 @@
 import * as THREE from '../../vendor/three.module.min.js';
 import { mergeGeometries } from '../../vendor/addons/BufferGeometryUtils.js';
 import { Builder, rng, atlasMaterial } from './builder.js';
+import { glowMasks } from './look.js';
 import { A } from './assets3d.js';
 import { donkeyCart, CART_FOOT } from './hazards.js';
 import { buildPigeonRoofs } from './level2.js';
@@ -25,8 +26,9 @@ export function makeMaterials() {
   // Facades, shopfronts, props, coops, roofs and the Arabic shop signs live in two atlases (see ATLAS), so a
   // town chunk is ~6 draw calls instead of one per texture.
   T.atlas_facades.anisotropy = T.ground_r2.anisotropy;
+  const G = glowMasks();
   const m = {
-    facades: atlasMaterial(T.atlas_facades), town: atlasMaterial(townAtlas(T.atlas_town.image, T.ground_r2.anisotropy)),
+    facades: atlasMaterial(T.atlas_facades, G.facades), town: atlasMaterial(townAtlas(T.atlas_town.image, T.ground_r2.anisotropy), G.town),
     street: L({ map: T.ground_r2 }), market: L({ map: T.ground_market }),
     wood: L({ map: T.wood_planks }), khay: L({ map: T.khayamiya, side: THREE.DoubleSide }), produce: L({ map: T.produce }),
     kgoods: L({ map: T.kiosk_goods }), katlas: L({ map: kioskAtlas(T.fridge.image) }), prices: L({ map: priceCards(), side: THREE.DoubleSide }),
@@ -1076,7 +1078,7 @@ export class Level {
       this.melons.forEach(([x, y, z], i) => { M.compose(P.set(x, y, z), Q.setFromAxisAngle(S.set(0, 1, 0), i), S.set(1.35, 0.85, 1)); mm.setMatrixAt(i, M); });
       mm.castShadow = true; mm.computeBoundingSphere(); this.root.add(mm);
     }
-    const bm = new THREE.InstancedMesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe2a0 }), this.bulbs.length);
+    const bm = new THREE.InstancedMesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(7.0, 4.2, 1.5) }), this.bulbs.length);
     this.bulbs.forEach(([x, y, z], i) => { M.compose(P.set(x, y, z), Q.identity(), S.set(1, 1.2, 1)); bm.setMatrixAt(i, M); });
     bm.computeBoundingSphere(); this.root.add(bm);
   }

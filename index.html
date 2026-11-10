@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>مشوار المانجا</title>
 <link rel="preload" href="assets/fonts/cairo.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/lalezar.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="icon" href="assets/icon.png">
 <link rel="apple-touch-icon" href="assets/icon.png">
 <link rel="stylesheet" href="style.css">
@@ -45,10 +46,11 @@
       <div class="sun-track"><div id="sun-dot"></div></div>
       <div id="time-left" class="ar">٤:٣٠</div>
     </div>
-    <button id="btn-pause" class="round-btn" aria-label="pause">II</button>
+    <button id="btn-pause" class="round-btn" aria-label="pause"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/><rect x="13.9" y="5" width="3.6" height="14" rx="1.2" fill="currentColor"/></svg></button>
   </div>
 
   <div id="bars3d" class="hidden"><div class="lb t"></div><div class="lb b"></div><button class="skip-btn ar" id="skip3d">تخطّي ◂◂</button></div>
+  <div id="card3d" class="hidden"><div class="ar disp"></div><i></i><div class="en" dir="ltr"></div></div>
   <div id="subs3d" class="hidden"><div class="who ar"></div><div class="ar"></div><div class="en" dir="ltr"></div></div>
   <div id="toast" class="hidden"><div class="ar"></div><div class="en"></div></div>
   <div id="m3hud" class="hidden"><div class="rs"><span class="ar">احترام الشارع</span><b><i></i></b><em></em></div><div class="ord ar"></div></div>
@@ -59,7 +61,8 @@
 
   <div id="screen-loading" class="screen">
     <div class="load-box">
-      <div class="logo ar">مشوار المانجا</div>
+      <div class="logo disp ar">مشوار المانجا</div>
+      <div class="logo-en disp" dir="ltr">THE MANGO RUN</div>
       <div class="bar"><div id="load-fill"></div></div>
       <div class="ar small" id="load-text">بنحضّر المانجا...</div>
       <div class="en small" dir="ltr">Packing the mangoes...</div>
@@ -69,11 +72,33 @@
   <div id="screen-title" class="screen hidden">
     <div class="title-art"><img src="assets/img/title.webp" alt=""></div>
     <div class="title-panel">
-      <div class="logo ar">مشوار المانجا</div>
+      <div class="lockup">
+        <div class="kicker" dir="ltr"><i></i>IMBABA · CAIRO<i></i></div>
+        <div class="logo disp ar">مشوار المانجا</div>
+        <div class="logo-en disp" dir="ltr">THE MANGO RUN</div>
+      </div>
       <div class="missions">
-        <button class="big-btn ar btn3d mbtn" id="btn-start3d"><b>العب المهمة ١</b><span>مشوار المانجا · قبل المغرب</span><em dir="ltr">Mission 1 · The Mango Run</em></button>
-        <button class="big-btn ar mbtn locked" id="btn-m2"><b>المهمة ٢</b><span>الحمامة الهربانة</span><em dir="ltr" class="lk">Finish Mission 1 to unlock</em><em dir="ltr" class="ul">Mission 2 · The Runaway Pigeon</em></button>
-        <button class="big-btn ar mbtn locked" id="btn-m3"><b>المهمة ٣</b><span>أسبوع في كشك عمّه</span><em dir="ltr" class="lk">Finish Mission 2 to unlock</em><em dir="ltr" class="ul">Mission 3 · A Week at Uncle's Kiosk</em></button>
+        <button class="mbtn mcard btn3d" id="btn-start3d" data-m="1">
+          <span class="thumb" style="background-image:url('assets/img/card_m1.webp')"></span><svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="5" y="10.5" width="14" height="10" rx="2.4" fill="currentColor"/></svg>
+          <span class="no disp">١</span>
+          <b class="disp">مشوار المانجا</b>
+          <em dir="ltr" class="ul">The Mango Run</em><em dir="ltr" class="lk"></em>
+          <span class="mstars" dir="ltr"><i></i><i></i><i></i></span>
+        </button>
+        <button class="mbtn mcard locked" id="btn-m2" data-m="2">
+          <span class="thumb" style="background-image:url('assets/img/teaser_m2.webp')"></span><svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="5" y="10.5" width="14" height="10" rx="2.4" fill="currentColor"/></svg>
+          <span class="no disp">٢</span>
+          <b class="disp">الحمامة الهربانة</b>
+          <em dir="ltr" class="ul">The Runaway Pigeon</em><em dir="ltr" class="lk">Finish Mission 1</em>
+          <span class="mstars" dir="ltr"><i></i><i></i><i></i></span>
+        </button>
+        <button class="mbtn mcard locked" id="btn-m3" data-m="3">
+          <span class="thumb" style="background-image:url('assets/img/teaser_m3.webp')"></span><svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="5" y="10.5" width="14" height="10" rx="2.4" fill="currentColor"/></svg>
+          <span class="no disp">٣</span>
+          <b class="disp">أسبوع في الكشك</b>
+          <em dir="ltr" class="ul">A Week at Uncle's Kiosk</em><em dir="ltr" class="lk">Finish Mission 2</em>
+          <span class="mstars" dir="ltr"><i></i><i></i><i></i></span>
+        </button>
       </div>
       <div class="row">
         <button class="pill ar" id="btn-sound">الصوت: شغّال</button>
@@ -85,7 +110,7 @@
 
   <div id="screen-how" class="screen hidden">
     <div class="panel">
-      <div class="ptitle ar">إزاي تلعب</div>
+      <div class="ptitle disp ar">إزاي تلعب</div>
       <div class="how" id="how-list"></div>
       <button class="big-btn ar" id="btn-how-close">تمام</button>
       <div class="en small credit" dir="ltr">3D models: Powered by Tencent Hunyuan · Voices: ElevenLabs</div>
@@ -94,7 +119,7 @@
 
   <div id="screen-pause" class="screen dim hidden">
     <div class="panel narrow">
-      <div class="ptitle ar">استراحة</div>
+      <div class="ptitle disp ar">استراحة</div>
       <button class="big-btn ar" id="btn-resume">كمّل</button>
       <button class="pill wide ar" id="btn-restart-cp">ابدأ من آخر نقطة</button>
       <div class="row">
@@ -107,7 +132,7 @@
 
   <div id="screen-fail" class="screen dim hidden">
     <div class="panel narrow">
-      <div class="ptitle ar" id="fail-title"></div>
+      <div class="ptitle disp ar" id="fail-title"></div>
       <div class="en small" id="fail-title-en" dir="ltr"></div>
       <div class="ar body" id="fail-body"></div>
       <div class="en small" id="fail-body-en" dir="ltr"></div>
@@ -118,9 +143,9 @@
   <div id="screen-end" class="screen hidden">
     <div class="end-wrap">
       <div class="end-main">
-        <div class="ptitle ar" id="end-title">المهمة الأولى خلصت!</div>
+        <div class="ptitle disp ar" id="end-title">المهمة الأولى خلصت!</div>
         <div class="en small" dir="ltr" id="end-title-en">Mission 1 complete!</div>
-        <div class="stars" id="stars" dir="ltr"><span>★</span><span>★</span><span>★</span></div>
+        <div class="stars" id="stars" dir="ltr"><span></span><span></span><span></span></div>
         <div class="stats">
           <div><b class="ar" id="end-mangoes"></b><span class="ar" id="end-count-ar">مانجا</span><em class="en" dir="ltr" id="end-count-en">Mangoes</em></div>
           <div><b class="ar" id="end-time"></b><span class="ar">الوقت</span><em class="en" dir="ltr">Time</em></div>

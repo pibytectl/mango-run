@@ -64,7 +64,10 @@ export function audioInit(why = 'gesture') {
 }
 // a one-sample silent buffer started inside the gesture: the classic iOS output unlock
 function unlockTick() {
-  try { const b = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); unlocked = true; } catch (e) {}
+  // iOS: the first listener to fire is pointerdown, which is not a gesture there, so the context is still
+  // suspended after this tick: it only counts as the unlock once the context runs, and is repeated on the next
+  // gesture (touchend / click) until then
+  try { const b = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); unlocked = ctx.state === 'running'; } catch (e) {}
 }
 export function audioSuspend() {
   hidden = true;

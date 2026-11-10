@@ -70,7 +70,14 @@ export function initInput3D(isTouch, canvas) {
   const btnAt = (x, y) => { const el = document.elementFromPoint(x, y); const b = el && el.closest && el.closest('[data-b]'); return b && !b.classList.contains('off') ? b.dataset.b : null; };
   const onTouch = (e) => {
     if (e.type === 'touchstart') setInputMode('touch');
-    if (!I3.enabled) return;
+    // 2026-11-10 (phone play test): the thumb on the stick is followed all the time, controls on or off, so the
+    // stick is always what the thumb is really doing: its lift is always taken (a thumb lifted during a cutscene
+    // used to stay "held") and so are its moves (a thumb held through a cutscene or a pause carries on after it,
+    // no lift and re-press). New touches, the look drag and the buttons only count while the controls are on.
+    const lift = e.type === 'touchend' || e.type === 'touchcancel';
+    if (!I3.enabled && !lift && !(e.type === 'touchmove' && stickId !== null)) return;
+    // a lift that never reached us (the system took the touch): no ghost thumb keeps him running
+    if (stickId !== null && !lift && ![...e.touches].some((t) => t.identifier === stickId)) { stickId = null; I3.mx = 0; I3.my = 0; hideStick(); }
     const W = innerWidth;
     for (const t of e.changedTouches) {
       const id = t.identifier;
@@ -91,12 +98,17 @@ export function initInput3D(isTouch, canvas) {
           const m = Math.min(1, Math.hypot(dx, dy) / R), a = Math.atan2(dy, dx);
           I3.mx = Math.cos(a) * m; I3.my = -Math.sin(a) * m;
           showStick(stickO.x, stickO.y, Math.cos(a) * m * R, Math.sin(a) * m * R);
+        } else if (!I3.enabled) {
+          continue;
         } else if (id === lookId) {
           I3.look.x += (t.clientX - lookP.x) * LOOK_X; I3.look.y += (t.clientY - lookP.y) * LOOK_Y;
           lookP = { x: t.clientX, y: t.clientY }; I3.lastLook = performance.now();
         } else if (btnTouch.has(id)) {
           const b = btnAt(t.clientX, t.clientY), prev = btnTouch.get(id);
           if (b && b !== prev) { release(prev); btnTouch.set(id, b); press(b); vib(); }
+        } else if (stickId === null && t.clientX < W * 0.45 && !btnAt(t.clientX, t.clientY)) {
+          // a thumb put down while the controls were off (during a cutscene): it becomes the stick where it is
+          stickId = id; stickO = { x: t.clientX, y: t.clientY }; showStick(t.clientX, t.clientY);
         }
       } else {
         if (id === stickId) { stickId = null; I3.mx = 0; I3.my = 0; hideStick(); }
@@ -113,9 +125,13 @@ export function initInput3D(isTouch, canvas) {
       }
     }
     refreshBtns();
-    e.preventDefault();
+    // menus, the pause and skip buttons keep their taps: only touches on the control layer are swallowed
+    if (I3.enabled && root.contains(e.target)) e.preventDefault();
   };
-  for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) root.addEventListener(ev, onTouch, { passive: false });
+  root.addEventListener('touchstart', onTouch, { passive: false });
+  // moves and lifts are taken on the window: a thumb put down during a cutscene never started on the control
+  // layer (it is hidden then), and its moves must still reach the stick once play begins
+  for (const ev of ['touchmove', 'touchend', 'touchcancel']) addEventListener(ev, onTouch, { passive: false, capture: true });
 
   // keyboard
   const KM = { KeyW: 'f', ArrowUp: 'f', KeyS: 'b', ArrowDown: 'b', KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r',
@@ -123,7 +139,8 @@ export function initInput3D(isTouch, canvas) {
   addEventListener('keydown', (e) => {
     if (!I3.enabled) return;
     const k = KM[e.code]; if (!k) return;
-    e.preventDefault(); setInputMode('kbm'); if (e.repeat) return;
+    e.preventDefault(); setInputMode('kbm');
+    if (e.repeat) { if ('fblr'.includes(k) || k === 'sprint' || k === 'block') keys.add(k); return; }
     keys.add(k);
     if (k === 'jump') { I3.pressed.jump = true; I3.pressed.boost = true; }
     if (k === 'attack') I3.pressed.attack = true;
@@ -210,9 +227,18 @@ export function readInput3D(out) {
   return out;
 }
 export function takeLook() { const l = { x: I3.look.x, y: I3.look.y, recenter: I3.recenter }; I3.look.x = 0; I3.look.y = 0; I3.recenter = false; return l; }
+// A section change in the middle of a run (Mission 2's roofs, the jetty): only the one-shot presses and the look
+// are dropped. The full clear below lifted the stick under a held thumb (and a held W), so Radwan stopped dead
+// until the player let go and pressed again; the scripted test player never touched this path.
+export function softClearInput3D() {
+  lastTap = null; I3.look.x = I3.look.y = 0; I3.recenter = false;
+  for (const k in I3.pressed) I3.pressed[k] = false;
+}
+// The stick is not cleared: it follows the real thumb (see onTouch), so a thumb that is down stays the stick.
 export function clearInput3D() {
-  keys.clear(); btnTouch.clear(); stickId = lookId = null; lastTap = null; I3.mx = I3.my = 0; I3.look.x = I3.look.y = 0; I3.recenter = false;
+  keys.clear(); btnTouch.clear(); lookId = null; lastTap = null; I3.look.x = I3.look.y = 0; I3.recenter = false;
   I3.jumpHeld = I3.blockHeld = I3.boostHeld = false;
   for (const k in I3.pressed) I3.pressed[k] = false;
-  hideStick(); if (els) refreshBtns();
+  if (stickId === null) { I3.mx = I3.my = 0; hideStick(); }
+  if (els) refreshBtns();
 }

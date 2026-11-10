@@ -9,7 +9,7 @@ const $ = (id) => document.getElementById(id);
 export class Voice {
   constructor() {
     this.cur = null; this.curPri = 0; this.cool = {}; this.last = {}; this.played = new Set(); this.loaded = 0; this.failed = 0;
-    this.el = $('subs3d'); this.nameEl = this.el.querySelector('.who'); this.arEl = this.el.querySelector('.ar'); this.enEl = this.el.querySelector('.en');
+    this.el = $('subs3d'); this.nameEl = this.el.querySelector('.who'); this.arEl = this.el.querySelector('.ar:not(.who)'); this.enEl = this.el.querySelector('.en');
     this.subT = 0; this.gen = 0;
   }
   // priority: 3 story (cutscene), 2 important gameplay, 1 bark

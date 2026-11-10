@@ -9,7 +9,8 @@ import { Hero, ATTACKS } from './hero3d.js';
 import { Npc, Goat, Pigeons } from './npc.js';
 import { Sky, Particles, Mangoes } from './fx3d.js';
 import { ChaseCam } from './camera3d.js';
-import { I3, initInput3D, readInput3D, takeLook, clearInput3D, updateLockHint } from './input3d.js';
+import { Post } from './post.js';
+import { I3, initInput3D, readInput3D, takeLook, clearInput3D, softClearInput3D, updateLockHint } from './input3d.js';
 import { Voice } from './voice.js';
 import { sfx3, Engine } from './sfx3d.js';
 import { Chase, makeTok, makeFerry, ESCAPE_GAP, END_GAP } from './vehicle.js';
@@ -71,6 +72,10 @@ class Game3D {
     this.saved = { tm: r.toneMapping, exp: r.toneMappingExposure, sh: r.shadowMap.enabled };
     r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
     r.shadowMap.enabled = true; r.shadowMap.type = this.isTouch ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    // the look pass (post.js): on unless ?post=0 or the device cannot draw to float targets
+    const Qs = new URLSearchParams(location.search);
+    this.post = null; this.frameN = 0;
+    if (Qs.get('post') !== '0' && Post.supported(r)) { try { this.post = new Post(r, { samples: Qs.get('aa') === '0' ? 0 : 4 }); } catch (e) { console.warn('post off', e); this.post = null; } }
     await loadAssets3D((p) => ui.setLoad(0.05 + p * 0.85), r.capabilities.getMaxAnisotropy ? Math.min(4, r.capabilities.getMaxAnisotropy()) : 1, this.mission);
     this.quality = this.isTouch ? { shadow: 1024, shadowRange: 26 } : { shadow: 2048, shadowRange: 32 };
     this.scene = new THREE.Scene();
@@ -218,6 +223,8 @@ class Game3D {
     this.state = 'play';
     $('bars3d').onclick = () => this.advance();
     $('skip3d').onclick = (e) => { e.stopPropagation(); this.skipCut(); };
+    // with a thumb resting on the screen, a second finger's tap is not a click on a phone: take the touch too
+    $('skip3d').ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); this.skipCut(); };
     audioInit('3d'); playMusic('title', 0.45); setAmbient(0.16);
     this.raf = requestAnimationFrame((t) => this.frame(t));
     if (this.auto) { this.bot = new Bot(this); I3.bot = this.bot.inp; }
@@ -280,18 +287,26 @@ class Game3D {
   }
   wait(sec) { if (this.skip) return Promise.resolve(); return new Promise((res) => this.waits.push({ t: sec, res })); }
   async say(id) { if (this.skip) return; this.stats.voices++; await this.voice.say(id, 3); if (!this.skip) await this.wait(0.12); }
-  skipCut() { if (this.mode !== 'cut') return; this.skip = true; this.voice.stop(); for (const w of this.waits) w.res(); this.waits = []; }
+  skipCut() { if (this.mode !== 'cut') return; this.skip = true; $('card3d').classList.add('hidden'); this._card = null; this.voice.stop(); this.voice.hide(); for (const w of this.waits) w.res(); this.waits = []; }
   advance() { if (this.mode === 'cut' && this.voice.busy()) this.voice.stop(); }
   play(seg) {
+    // already in play with the controls on = a section change mid-run: the held stick and keys stay
+    const midRun = this.mode === 'play' && this.state === 'play' && I3.enabled;
     this.mode = 'play'; this.seg = seg; this.cam.shot = null; if (this.roofCue) this.roofCue.visible = false;
     this.traps.show(seg === 'roofs' || !!this.m2);
-    this.showControls(true); clearInput3D(); this.setButtons(seg);
+    this.showControls(true); if (midRun) softClearInput3D(); else clearInput3D(); this.setButtons(seg);
     this.segStart = this.elapsed;
     this.closeSection(); this.sec = { seg, lost: this.hpLost || 0, m: this.mangoes, dirty: false };
     this.stats.segTimes[seg] = +this.elapsed.toFixed(1);
     this.log('segment', seg, { t: +this.elapsed.toFixed(1), mangoes: this.mangoes, hp: this.hp });
     const s = SEG[seg]; this.ui.banner({ ar: s.ar, en: s.en });
-    setTimeout(() => { if (this.seg === seg && this.mode === 'play' && !this.stickyOn()) this.toast({ ar: s.oar, en: s.oen }, 3.2, 'obj'); }, 2300);
+    // the objective waits while the controls toast is still up (it used to replace it after 2.3 s)
+    const obj = () => {
+      if (this.seg !== seg || this.mode !== 'play' || !this.active) return;
+      if (this.ui.toastKey === 'ctl' && this.ui.toastT > 0) { setTimeout(obj, this.ui.toastT * 1000 + 250); return; }
+      if (!this.stickyOn()) this.toast({ ar: s.oar, en: s.oen }, 3.2, 'obj');
+    };
+    setTimeout(obj, 2300);
     playMusic('run', 0.5); setMusicRate(seg === 'chase' || seg === 'fight' ? 1.05 : 1);
     if (this.m2) setAmbient(0.3, 'roof');
     else if (this.m3) setAmbient(seg === 'd5' ? 0.12 : 0.24, 'street');
@@ -335,7 +350,7 @@ class Game3D {
       this.updateCamera(dt);
       this.renderFrame(dt);
     } else if (this.state === 'paused' || this.state === 'fail') {
-      this.renderer.render(this.scene, this.camera);
+      this.draw(0);
     }
     this.perf(dt);
   }
@@ -409,17 +424,43 @@ class Game3D {
   }
   renderFrame(dt) {
     const focus = this.seg === 'chase' && this.chase.active ? V(this.chase.player.x, 0, this.chase.player.z) : this.hero.pos;
-    this.sky.update(this.camera.position, focus);
-    // static town chunks beyond ~340 m are fully fogged (FogExp2 0.0062 is ~97% fog at 300 m): skip them
+    // the shadow map is redrawn every other frame (it is the town's whole triangle count again); its camera only
+    // moves on those frames, so the shadows never slide. A camera cut redraws it at once.
+    const R = this.renderer; this.frameN++;
+    const cut = this._shFocus ? Math.hypot(focus.x - this._shFocus.x, focus.z - this._shFocus.z) > 6 : true;
+    const sh = cut || (this.frameN & 1) === 0 || this.shadowEvery;
+    if (sh) (this._shFocus || (this._shFocus = V(0, 0, 0))).copy(focus);
+    R.shadowMap.autoUpdate = false; R.shadowMap.needsUpdate = sh;
+    this.sky.update(this.camera.position, focus, sh);
+    // static town chunks beyond ~270 m are lost in the haze (FogExp2 0.0078 is ~99% fog at 270 m): skip them
     const cp = this.camera.position;
-    for (const m of this.level.meshes) { const b = m.geometry.boundingSphere; m.visible = Math.hypot(b.center.x - cp.x, b.center.z - cp.z) - b.radius < 340; }
+    for (const m of this.level.meshes) { const b = m.geometry.boundingSphere; m.visible = Math.hypot(b.center.x - cp.x, b.center.z - cp.z) - b.radius < 270; }
     this.level.nile.material.uniforms.uTime.value += dt;
     this.level.nile.material.uniforms.uSun.value.copy(this.sky.dir);
     this.level.nile.material.uniforms.uFogCol.value.copy(this.sky.fog.color);
-    this.renderer.render(this.scene, this.camera);
+    // speed streaks: the tok-tok at pace (more on the boost), a sprint on foot, a slide
+    const P = this.post;
+    if (P) {
+      let want = 0;
+      if (this.mode === 'play') {
+        if (this.seg === 'chase' && this.chase.active) { const c = this.chase.player; want = Math.max(0, Math.min(1, (c.v - 9) / 9)) * 0.55 + (c.boosting ? 0.45 : 0); }
+        else if (this.hero.state === 'slide') want = 0.5;
+        else if (this.hero.sprinting) want = 0.3;
+      }
+      P.speed += (want - P.speed) * Math.min(1, dt * (want > P.speed ? 5 : 3));
+      P.look.rays = this.sky.sunDisc.visible ? 1 : 0;
+    }
+    this.draw(dt);
     this.ui.tickToast(dt);
     this.updateWorldUi(dt);
     this.syncHud();
+  }
+  draw(dt = 0) {
+    // the look pass is several render calls: count the frame's draw calls and triangles across all of them
+    if (this._card && dt > 0) this.tickCard(Math.min(dt, 0.05));
+    const info = this.renderer.info; info.autoReset = false; info.reset();
+    if (this.post) this.post.render(this.scene, this.camera, this.sky.dir, dt);
+    else this.renderer.render(this.scene, this.camera);
   }
   perf(dt) {
     this.fpsAcc = (this.fpsAcc || 0) + dt; this.fpsN = (this.fpsN || 0) + 1;
@@ -551,9 +592,9 @@ class Game3D {
     const h = this.hero, p = h.pos;
     switch (e) {
       case 'jump': sfx.jump(); break;
-      case 'land': sfx.land(d); this.fx.emit(p.x, p.y + 0.05, p.z, d ? 10 : 4, { speed: 2, up: 0.5, life: 0.5 }); if (d) this.cam.shake(0.25); break;
+      case 'land': sfx.land(d); this.fx.emit(p.x, p.y + 0.05, p.z, d ? 16 : 7, { ring: true, speed: d ? 3.4 : 2.2, up: 0.3, life: 0.55, size: 0.34, grow: 2.2, alpha: 0.55, drag: 4 }); if (d) this.cam.shake(0.25); break;
       case 'roll': sfx.land(true); this.fx.emit(p.x, p.y + 0.05, p.z, 12, { speed: 2.5, up: 0.6 }); this.cam.shake(0.2); break;
-      case 'step': if (Math.random() < 0.8) sfx.step(); if (d > 7 && Math.random() < 0.4) this.fx.emit(p.x, p.y + 0.05, p.z, 1, { speed: 0.6, up: 0.3, size: 0.3, life: 0.5, alpha: 0.4 }); break;
+      case 'step': if (Math.random() < 0.8) sfx.step(); if (d > 7) this.fx.emit(p.x, p.y + 0.05, p.z, 2, { speed: 0.7, up: 0.5, size: 0.32, life: 0.6, alpha: 0.42, grow: 2.4 }); break;
       case 'vault': sfx.vault(); if (Math.random() < 0.45) this.voice.bark(['r1', 'r2'], 'parkour', 9); break;
       case 'climb': sfx.cloth(); break;
       case 'walljump': sfx3.wall(); this.fx.emit(p.x, p.y + 1, p.z, 6, { speed: 1.5, up: 0.3 }); this.cam.shake(0.12); break;
@@ -581,13 +622,31 @@ class Game3D {
       const fin = !!atk.finisher;
       this.hitStop = fin ? 0.11 : 0.065;
       this.cam.shake(fin ? 0.45 : 0.28);
+      if (this.post) this.post.flash = Math.max(this.post.flash, fin ? 0.42 : 0.16);
       sfx3.staffHit(fin);
       const f = h.pos, fy = Math.sin(h.yaw), fz = Math.cos(h.yaw);
-      this.fx.emit(f.x + fy * 1.3, f.y + 1.35, f.z + fz * 1.3, fin ? 16 : 9, { color: 0xffe2a0, speed: 4.5, up: 2, life: 0.35, size: 0.14, g: 3, alpha: 1, grow: 0.2 });
+      const ix = f.x + fy * 1.3, iy = f.y + 1.35, iz = f.z + fz * 1.3;
+      // hot sparks (bright enough for the glow pass), a white core, and on a finisher a dust ring along the ground
+      this.fx.emit(ix, iy, iz, fin ? 22 : 12, { color: 0xffc66a, hdr: 3.2, speed: fin ? 7 : 5, up: 2.4, life: 0.32, size: 0.11, g: 9, alpha: 1, grow: 0.1, drag: 3 });
+      this.fx.emit(ix, iy, iz, fin ? 3 : 2, { color: 0xfff4d8, hdr: 2.4, speed: 0.4, up: 0.1, life: 0.12, size: fin ? 0.9 : 0.55, g: 0, alpha: 0.9, grow: 1.6, spread: 0.1 });
+      if (fin) this.fx.emit(ix, f.y + 0.08, iz, 18, { ring: true, speed: 5.5, up: 0.25, life: 0.5, size: 0.4, g: 1, alpha: 0.55, grow: 2.2, drag: 4 });
+      this.pow(ix, iy + 0.5, iz, fin);
       if (navigator.vibrate) try { navigator.vibrate(fin ? 30 : 15); } catch (e) {}
     }
   }
+  // comic impact word at the hit, in screen space (DOM): the screen answers the blow
+  pow(x, y, z, big) {
+    const host = $('world-ui'); if (!host) return;
+    const v = new THREE.Vector3(x, y, z).project(this.camera); if (v.z > 1) return;
+    const W = big ? ['طراااخ!', 'بووم!', 'على دماغك!'] : ['طاخ!', 'طخ!', 'بف!', 'تراك!'];
+    const el = document.createElement('div'); el.className = 'pow ar' + (big ? ' big' : '');
+    el.textContent = W[(this._powN = (this._powN || 0) + 1) % W.length];
+    el.style.left = ((v.x * 0.5 + 0.5) * 100).toFixed(1) + '%'; el.style.top = ((-v.y * 0.5 + 0.5) * 100).toFixed(1) + '%';
+    el.style.setProperty('--r', ((Math.random() - 0.5) * 24).toFixed(0) + 'deg');
+    host.appendChild(el); setTimeout(() => el.remove(), 650);
+  }
   gainMango() {
+    { const p = this.hero.pos; this.fx.emit(p.x, p.y + 1.5, p.z, 7, { color: 0xffb030, hdr: 2.6, speed: 2.2, up: 3, life: 0.45, size: 0.1, g: 5, alpha: 1, grow: 0.2 }); }
     this.mangoes = Math.min(12, this.mangoes + 1);
     if (this.stolen > 0) this.stolen--;
     sfx.mango(this.mangoes);
@@ -614,7 +673,7 @@ class Game3D {
     if (r === 'blocked') { sfx3.clack(); this.cam.shake(0.15); this.fx.emit(this.hero.pos.x, this.hero.pos.y + 1.9, this.hero.pos.z, 6, { color: 0xfff0c0, speed: 3, up: 1, life: 0.25, size: 0.1, alpha: 1 }); return r; }
     if (r === 'dodged') return r;
     this.hp = Math.max(0, this.hp - dmg);
-    sfx3.hurt(); this.cam.shake(heavy ? 0.6 : 0.35);
+    sfx3.hurt(); this.cam.shake(heavy ? 0.6 : 0.35); if (this.post) this.post.hurt = 1;
     $('vig3d').classList.remove('flash'); void $('vig3d').offsetWidth; $('vig3d').classList.add('flash');
     if (Math.random() < 0.6) this.voice.bark(this.m3 ? ['r3'] : ['r3', 'r4'], 'hurt', 5);
     if (navigator.vibrate) try { navigator.vibrate(60); } catch (e) {}
@@ -655,6 +714,20 @@ class Game3D {
   faceTo(who, x, z) { who.yaw = Math.atan2(x - who.body.pos.x, z - who.body.pos.z); }
   fade(on) { $('fade3d').classList.toggle('on', on); return this.wait(on ? 0.35 : 0.1); }
   shot(o) { this.cam.setShot(o); }
+  // a place-and-time card over a cutscene's first shot. It runs on game time and starts a few drawn frames in:
+  // the first frames of a mission compile shaders for seconds, and a wall-clock card was over before they showed
+  card(t, dur = 4.5) { this._card = { t, dur, f: 0, left: -1 }; }
+  tickCard(dt) {
+    const k = this._card; if (!k) return;
+    const c = $('card3d');
+    if (k.left < 0) {
+      if (++k.f < 4) return;
+      c.querySelector('.ar').textContent = k.t.ar; c.querySelector('.en').textContent = k.t.en;
+      c.style.setProperty('--d', k.dur + 's'); c.classList.remove('hidden'); c.style.animation = 'none'; void c.offsetWidth; c.style.animation = '';
+      k.left = k.dur; return;
+    }
+    k.left -= dt; if (k.left <= 0 || this.mode !== 'cut') { c.classList.add('hidden'); this._card = null; }
+  }
   headOf(who, up = 1.6) { return () => V(who.body.pos.x, who.body.pos.y + up, who.body.pos.z); }
 
   // ================================================================== 1. intro
@@ -669,7 +742,9 @@ class Game3D {
     N.extras[0].show(true); N.extras[0].place(8.3, 0, 24 + Z, -1.2);
     N.extras[1].show(true); N.extras[1].place(-7.6, 0, 22.4 + Z, 2.0);
     this.mover(N.kids[0], 6, 8 + Z, 2.2);
-    this.shot({ pos: P(-9, 6.5, 1), pos2: P(-6, 4, 8.5), look: P(3.5, 1.5, 21), look2: P(3, 1.4, 20), fov: 50, dur: 9 });
+    // the opening image: over the plaza toward the low sun (lit windows, haze, shafts), craning down to the microbus
+    this.shot({ pos: P(-2, 9, 34), pos2: P(-5.5, 2.7, 29.5), look: P(8, 6, -40), look2: P(5.5, 2.9, 12), fov: 54, dur: 9 });
+    this.card({ ar: 'إمبابة · قبل المغرب بساعة', en: 'Imbaba, Cairo · one hour to sunset' }, 5.2);
     this.mover(h, 2.8, 19.6 + Z, 1.4);
     await this.say('i1');
     this.shot({ pos: P(1.5, 1.68, 17.2), look: this.headOf(h, 1.55), fov: 40, blend: 0.6 });
@@ -720,7 +795,7 @@ class Game3D {
     for (const [i, k] of this.npc.kids.entries()) { k.show(true); k.place(L.kids[i].x, 0, L.kids[i].z, -1.2 + i); }
     this.ball.p.copy(L.ball); this.ball.v.set(0, 0, 0); this.ball.live = true; this.ball.m.visible = true; this.ball.kicked = false;
     this.play('street');
-    if (!fromCp) this.toast(I3.touch ? { ar: 'الإبهام الشمال للمشي (زقّه للآخر تجري)، واسحب على اليمين للكاميرا', en: 'Left thumb moves (push it all the way to sprint), drag the right side to look' } : { ar: 'WASD للمشي، الماوس للكاميرا، Shift للجري، Space للنط، J للنبّوت', en: 'WASD move, mouse look, Shift sprint, Space jump, J or click: staff' }, 4.5);
+    if (!fromCp) this.toast(I3.touch ? { ar: 'الإبهام الشمال للمشي (زقّه للآخر تجري)، واسحب على اليمين للكاميرا', en: 'Left thumb moves (push it all the way to sprint), drag the right side to look' } : { ar: 'WASD للمشي، الماوس للكاميرا، Shift للجري، Space للنط، J للنبّوت', en: 'WASD move, mouse look, Shift sprint, Space jump, J or click: staff' }, 5, 'ctl');
   }
   spawnStreetTok(x, z, vx, vz, tint) {
     const t = { tok: makeTok(this.scene, tint), x, z, vx, vz, honk: false, hit: false };
@@ -1008,7 +1083,8 @@ class Game3D {
     let el = this._pill;
     if (!el) { el = this._pill = document.createElement('div'); el.className = 'tpill hidden'; $('world-ui').appendChild(el); }
     const P = this._pillWant;
-    if (!P || this.elapsed - P.at > 0.1 || P.d < P.showAt || this.mode !== 'play') { el.classList.add('hidden'); return; }
+    // state: the frame that fails still draws once, and the pill then sat on top of the fail panel's text
+    if (!P || this.elapsed - P.at > 0.1 || P.d < P.showAt || this.mode !== 'play' || this.state !== 'play') { el.classList.add('hidden'); return; }
     const { pos, d, maxAt, danger, label } = P;
     const v = new THREE.Vector3(pos.x, (pos.y || 0) + 2.3, pos.z).project(this.camera);
     const W = innerWidth, H = innerHeight, behind = v.z > 1;
@@ -1195,7 +1271,7 @@ class Game3D {
     }
     if (e === 'hit' || e === 'down') { if (f.name !== 'thief' && Math.random() < 0.5) this.voice.bark('f6', 'f6', 6); else if (Math.random() < 0.35) this.voice.bark(['f4', 'f5'], 'radwanHit', 7); if (e === 'down') sfx3.thump(); }
     if (e === 'ko') { sfx3.thump(); this.cam.shake(0.5); this.hitStop = 0.16; this.fx.emit(f.pos.x, 0.2, f.pos.z, 16, { speed: 2.5, up: 0.8 }); this.voice.bark(['f4', 'f5'], 'radwanHit', 4); this.log('ko', f.name); }
-    if (e === 'heroHit') { this.hp = Math.max(0, this.hp - dmg); this.fightHurt = (this.fightHurt || 0) + dmg; this.log('hero hit', { by: f.name, kind: f.kind, flank: !!f.flanked, dmg, hp: this.hp, hero: this.hero.state }); sfx3.punch(); sfx3.hurt(); this.cam.shake(0.4); $('vig3d').classList.remove('flash'); void $('vig3d').offsetWidth; $('vig3d').classList.add('flash'); if (Math.random() < 0.5) this.voice.bark(['r3'], 'hurt', 6); }
+    if (e === 'heroHit') { this.hp = Math.max(0, this.hp - dmg); this.fightHurt = (this.fightHurt || 0) + dmg; this.log('hero hit', { by: f.name, kind: f.kind, flank: !!f.flanked, dmg, hp: this.hp, hero: this.hero.state }); sfx3.punch(); sfx3.hurt(); this.cam.shake(0.4); if (this.post) this.post.hurt = 1; $('vig3d').classList.remove('flash'); void $('vig3d').offsetWidth; $('vig3d').classList.add('flash'); if (Math.random() < 0.5) this.voice.bark(['r3'], 'hurt', 6); }
     if (e === 'blocked') { sfx3.clack(); this.cam.shake(0.15); const h = this.hero.pos; this.fx.emit(h.x, h.y + 1.9, h.z, 8, { color: 0xfff0c0, speed: 3, up: 1, life: 0.25, size: 0.1, alpha: 1 }); this.stats.blocks = (this.stats.blocks || 0) + 1; }
     if (e === 'dodged') { this.stats.dodges = (this.stats.dodges || 0) + 1; }
     if (e === 'armor') { sfx3.clack(); this.hint('armor', { ar: 'وهو بيضرب، الضرب الخفيف مش هيوقفه... صدّ أو اتفادى!', en: 'Mid-punch, light hits will not stop him: block or dodge!' }, 2.6, 'block'); }
@@ -1402,7 +1478,7 @@ class Game3D {
     $('end-mangoes').textContent = o.countText; $('end-count-ar').textContent = o.countLabel[0]; $('end-count-en').textContent = o.countLabel[1];
     $('end-time').textContent = clock(o.elapsed);
     $('end-fights').textContent = o.fails === 0 ? 'ولا مرة' : num(o.fails) + (o.fails > 2 ? ' مرات' : o.fails === 2 ? ' مرتين' : ' مرة');
-    $('end-checks').innerHTML = rows.map(([ok, a, e]) => `<div class="chk${ok ? ' ok' : ''}"><b>${ok ? '★' : '☆'}</b><span class="ar">${a}</span><em class="en" dir="ltr">${e}</em></div>`).join('');
+    $('end-checks').innerHTML = rows.map(([ok, a, e]) => `<div class="chk${ok ? ' ok' : ''}"><b></b><span class="ar">${a}</span><em class="en" dir="ltr">${e}</em></div>`).join('');
     const ranks = mission === 3 ? [
       { ar: 'الكشك لسه واقف، والأسبوع عدّى.', en: 'The kiosk is still standing, and the week is done.' },
       { ar: 'عمك فتحي فخور بيك!', en: 'Uncle Fathy is proud of you!' },
@@ -1423,6 +1499,7 @@ class Game3D {
     for (let i = 0; i < n; i++) setTimeout(() => sfx.star(i), 350 * i + 200);
     let unlocked = 1;
     try { unlocked = Math.max(+localStorage.getItem('saidi.unlocked') || 1, mission + 1); localStorage.setItem('saidi.unlocked', String(unlocked)); } catch (e) { unlocked = mission + 1; }
+    try { localStorage.setItem('saidi.best.' + mission, String(Math.max(n, +localStorage.getItem('saidi.best.' + mission) || 0))); } catch (e) { /* storage blocked */ }
     document.body.dataset.endm = String(mission);
     $('btn-next').classList.toggle('hidden', !(mission < 3 && unlocked >= mission + 1));
     $('btn-next').textContent = 'العب المهمة ' + num(mission + 1);
@@ -1472,7 +1549,28 @@ class Game3D {
     document.body.classList.remove('m2', 'm3'); if ($('m3hud')) $('m3hud').classList.add('hidden');
     removeEventListener('resize', this._onResize);
     document.body.classList.remove('mode3d');
-    const r = this.renderer; r.toneMapping = this.saved.tm; r.toneMappingExposure = this.saved.exp; r.shadowMap.enabled = this.saved.sh;
+    const r = this.renderer; r.toneMapping = this.saved.tm; r.toneMappingExposure = this.saved.exp; r.shadowMap.enabled = this.saved.sh; r.shadowMap.autoUpdate = true; r.info.autoReset = true;
+    if (this.post) { this.post.dispose(); this.post = null; r.setRenderTarget(null); }
+    // Free this mission's GPU memory. Nothing was released before: every start from the menu (or "play the next
+    // mission") kept the last level's buffers and textures (three's counters: 190 -> 329 geometries, 54 -> 100
+    // textures after a second start), the kind of growth that gets a tab killed on a phone.
+    try {
+      const seen = new Set();
+      const drop = (x) => { if (x && x.dispose && !seen.has(x)) { seen.add(x); x.dispose(); } };
+      this.scene.traverse((o) => {
+        if (o.geometry) drop(o.geometry);
+        for (const m of [].concat(o.material || [])) {
+          for (const k in m) { const v = m[k]; if (v && v.isTexture) drop(v); }
+          if (m.uniforms) for (const k in m.uniforms) { const v = m.uniforms[k] && m.uniforms[k].value; if (v && v.isTexture) drop(v); }
+          drop(m);
+        }
+        if (o.isLight && o.shadow && o.shadow.map) drop(o.shadow.map);
+        if (o.isInstancedMesh) o.dispose();
+      });
+      if (this.scene.background && this.scene.background.isTexture) drop(this.scene.background);
+      if (this.scene.environment) drop(this.scene.environment);
+      r.renderLists.dispose();
+    } catch (e) { console.warn('3d cleanup', e); }
     if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
   }
 }

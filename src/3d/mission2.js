@@ -119,6 +119,7 @@ export class Mission2 {
     this.suk.show(false);
     g.mover(h, P.x + 0.3, P.z + 0.6, 1.4, { face: Math.PI });
     g.shot({ pos: V(4.5, R2.H + 2.6, -891), pos2: V(3.2, R2.H + 2.1, -892.8), look: V(-0.5, R2.H + 1.2, -896.5), fov: 48, dur: 6 });
+    g.card({ ar: 'سطوح إمبابة · تاني يوم', en: 'The rooftops of Imbaba · the next day' }, 4.6);
     await g.say('p1');
     g.faceTo(h, this.hajja.pos.x, this.hajja.pos.z);
     g.shot({ pos: V(-1.2, R2.H + 1.65, -897.8), look: g.headOf(h, 1.5), fov: 40, blend: 0.6 });

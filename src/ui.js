@@ -16,6 +16,21 @@ function heartSVG(state, i, pop) {
     + `<path d="${HEART}" fill="none" stroke="${state === 'empty' ? '#c98a3a' : '#2a0905'}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 }
 
+// A button that answers the touch itself as well as the click. On a phone a tap makes a click only when it is
+// the one finger on the screen: with the left thumb still resting where the stick is, Pause, Resume, Retry and
+// Skip did nothing until the player let go (phone play test 2026-11-10, real touches on the GPU rig).
+export function onTap(el, fn) {
+  let sx = 0, sy = 0, last = 0;
+  const go = (e) => { const now = Date.now(); if (now - last < 400) return; last = now; fn(e); };
+  el.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY; }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0], r = el.getBoundingClientRect();
+    if (!t || Math.hypot(t.clientX - sx, t.clientY - sy) > 14 || t.clientX < r.left || t.clientX > r.right || t.clientY < r.top || t.clientY > r.bottom) return;
+    e.preventDefault(); go(e);   // no click follows; where one still does, the 400 ms guard drops it
+  }, { passive: false });
+  el.addEventListener('click', go);
+}
+
 export class UI {
   constructor() {
     this.toastT = 0;
@@ -27,6 +42,7 @@ export class UI {
   show(id, on = true) { $(id).classList.toggle('hidden', !on); }
   screen(name) {
     for (const s of ['screen-loading', 'screen-title', 'screen-how', 'screen-pause', 'screen-fail', 'screen-end']) this.show(s, s === name);
+    document.body.dataset.screen = name ? name.replace('screen-', '') : '';
   }
   setLoad(p) { $('load-fill').style.width = Math.round(p * 100) + '%'; }
   setSubs(on) {

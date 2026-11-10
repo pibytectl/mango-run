@@ -124,6 +124,7 @@ export class Mission3 {
     F.show(true); F.place(2.3, 0, -899.2, PI / 2 + 0.3); F.anim.play('idle', { loop: true });
     g.shot({ pos: V(-3.2, 2.6, -892), pos2: V(-2.2, 2.2, -894.5), look: V(3.5, 1.6, -900), fov: 50, dur: 6 });
     g.mover(h, 1.0, -897.4, 1.5, { face: PI });
+    g.card({ ar: 'كشك عم فتحي · اليوم الأول', en: "Uncle Fathy's kiosk · day one" }, 4.6);
     await g.say('w1');
     g.faceTo(F, h.pos.x, h.pos.z); F.anim.play('talk', { loop: true, fade: 0.2 });
     g.shot({ pos: V(-0.4, 1.7, -901.6), look: g.headOf(h, 1.55), fov: 40, blend: 0.6 });
@@ -212,9 +213,9 @@ export class Mission3 {
     S.setSun(k);
     const night = day === 'd5';
     S.domeMat.color.setRGB(night ? 0.12 : 1, night ? 0.13 : 1, night ? 0.22 : 1);
-    S.ringMat.color.setHex(night ? 0x20222c : 0xd9b59a);
+    if (night) S.ringMat.color.setHex(0x20222c);
     S.sunGlow.visible = S.sunDisc.visible = !night;
-    S.fog.density = night ? 0.022 : 0.0062;
+    S.fog.density = night ? 0.022 : S.dayFog;
     this.rain.visible = night; this.lantern.intensity = night ? 9 : 0; this.kioskLight.intensity = 0;
   }
   light(dt) {

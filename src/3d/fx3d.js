@@ -2,12 +2,14 @@
 // particle system (dust, hit sparks, juice, splashes) and mango pickups.
 import * as THREE from '../../vendor/three.module.min.js';
 import { A } from './assets3d.js';
+import { SUN_AZ, installFog, skyMaterial } from './look.js';
 
 export class Sky {
   constructor(scene, renderer, quality) {
     this.scene = scene;
+    installFog();
     this.group = new THREE.Group(); scene.add(this.group);
-    // panorama dome
+    // panorama dome (redesign: its own shader, see look.js; the cloud photo carries a painted dusk gradient)
     const sky = A.tex.sky; sky.wrapS = THREE.MirroredRepeatWrapping;
     const domeGeo = new THREE.SphereGeometry(900, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.62);
     // remap uv: u wraps twice (mirrored), v from horizon (0) to zenith (1)
@@ -16,19 +18,13 @@ export class Sky {
       const y = pos.getY(i) / 900;
       uv.setXY(i, uv.getX(i) * 2, Math.max(0.0, Math.min(1, 0.04 + y * 1.25)));
     }
-    this.domeMat = new THREE.MeshBasicMaterial({ map: sky, side: THREE.BackSide, fog: false, depthWrite: false });
+    this.domeMat = skyMaterial(sky);
     this.dome = new THREE.Mesh(domeGeo, this.domeMat);
-    this.dome.renderOrder = -10;
+    this.dome.renderOrder = -10; this.dome.frustumCulled = false;
     this.dome.rotation.y = Math.PI * 0.5;
     this.group.add(this.dome);
-    // a band of haze at the horizon to blend into the fog colour
-    const bandGeo = new THREE.CylinderGeometry(880, 880, 160, 32, 1, true); bandGeo.translate(0, 20, 0);
-    this.bandMat = new THREE.ShaderMaterial({
-      uniforms: { uCol: { value: new THREE.Color() } }, side: THREE.BackSide, transparent: true, depthWrite: false, fog: false,
-      vertexShader: 'varying float vY; void main(){ vY = position.y; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-      fragmentShader: 'uniform vec3 uCol; varying float vY; void main(){ float a = smoothstep(100., -40., vY); gl_FragColor = vec4(uCol, a*0.95);\n#include <colorspace_fragment>\n}',
-    });
-    this.band = new THREE.Mesh(bandGeo, this.bandMat); this.band.renderOrder = -8; this.group.add(this.band);
+    // the horizon haze is part of the dome shader now; mission3 still sets its colour through bandMat
+    this.bandMat = { uniforms: { uCol: this.domeMat.uniforms.uFog } };
     // skyline ring (alpha-tested silhouettes)
     const sl = A.tex.skyline; sl.wrapS = THREE.RepeatWrapping;
     const ringGeo = new THREE.CylinderGeometry(760, 760, 140, 48, 1, true); ringGeo.translate(0, 38, 0);
@@ -36,16 +32,11 @@ export class Sky {
     this.ringMat = new THREE.MeshBasicMaterial({ map: sl, side: THREE.BackSide, alphaTest: 0.5, fog: false, color: 0xd9b59a, depthWrite: true });
     this.ring = new THREE.Mesh(ringGeo, this.ringMat); this.ring.renderOrder = -7;
     this.group.add(this.ring);
-    // sun disc + glow
-    const glowTex = radialTex();
-    this.sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffb070, fog: false, depthWrite: false, transparent: true, blending: THREE.AdditiveBlending }));
-    this.sunGlow.scale.setScalar(380); this.sunGlow.renderOrder = -6;
-    this.sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xfff1c8, fog: false, depthWrite: false, transparent: true }));
-    this.sunDisc.scale.setScalar(60); this.sunDisc.renderOrder = -5;
-    this.group.add(this.sunGlow, this.sunDisc);
+    // the sun is drawn by the dome shader; these two stay as switches (mission3 hides the sun at night)
+    this.sunGlow = { visible: true }; this.sunDisc = { visible: true };
 
-    // lights
-    this.hemi = new THREE.HemisphereLight(0xffd2a8, 0x5a4636, 1.25);
+    // lights: a strong gold key, cool sky light in the shade, a warm bounce off the ground
+    this.hemi = new THREE.HemisphereLight(0xa9b8ff, 0x8a5a3a, 1.0);
     scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xffb27a, 3.1);
     this.sun.castShadow = true;
@@ -55,34 +46,39 @@ export class Sky {
     Object.assign(this.sun.shadow.camera, { left: -S, right: S, top: S, bottom: -S, near: 1, far: 260 });
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.04;
     scene.add(this.sun, this.sun.target);
-    this.fill = new THREE.DirectionalLight(0x8fa7d8, 0.55); // cool bounce from the east
+    this.fill = new THREE.DirectionalLight(0x7f95e0, 0.3); // cool sky fill from the east, behind the camera
     this.fill.position.set(-0.3, 0.6, 1); scene.add(this.fill);
-    this.fog = new THREE.FogExp2(0xe39a68, 0.0062);
+    this.dayFog = 0.0078;
+    this.fog = new THREE.FogExp2(0xe39a68, this.dayFog);
     scene.fog = this.fog;
     this.dir = new THREE.Vector3();
     this.setSun(1);
   }
-  // k: 1 = start of the mission (sun ~15 deg up), 0 = sunset
+  // k: 1 = start of the mission (sun ~17 deg up), 0 = sunset
   setSun(k) {
-    const elev = THREE.MathUtils.degToRad(1.5 + 14 * k);
-    const az = THREE.MathUtils.degToRad(17); // a little right of straight down the road (-Z)
-    this.dir.set(Math.sin(az) * Math.cos(elev), Math.sin(elev), -Math.cos(az) * Math.cos(elev));
+    const elev = THREE.MathUtils.degToRad(3 + 14 * k);
+    this.dir.set(Math.sin(SUN_AZ) * Math.cos(elev), Math.sin(elev), -Math.cos(SUN_AZ) * Math.cos(elev));
     const warm = 1 - k;
-    this.sun.color.setRGB(1, 0.72 - 0.16 * warm, 0.48 - 0.22 * warm);
-    this.sun.intensity = 2.7 + 0.6 * k;
-    this.hemi.intensity = 1.05 + 0.3 * k;
-    this.hemi.color.setRGB(1, 0.8 - 0.1 * warm, 0.66 - 0.16 * warm);
-    this.fog.color.setRGB(0.9, 0.6 - 0.08 * warm, 0.42 - 0.1 * warm);
-    this.bandMat.uniforms.uCol.value.copy(this.fog.color);
-    this.sunDisc.material.color.setRGB(1, 0.93 - 0.2 * warm, 0.75 - 0.35 * warm);
-    this.domeMat.color.setRGB(1, 1 - 0.1 * warm, 1 - 0.2 * warm);
+    this.sun.color.setRGB(1, 0.66 - 0.2 * warm, 0.36 - 0.2 * warm);
+    this.sun.intensity = 3.7 + 0.5 * k;
+    // the shade cools and deepens as the sun drops: lavender sky light over a warm ground bounce
+    this.hemi.intensity = 1.02 + 0.2 * k;
+    this.hemi.color.setRGB(0.62 + 0.06 * k, 0.68 + 0.04 * k, 1.0);
+    this.hemi.groundColor.setRGB(0.62, 0.36 - 0.06 * warm, 0.22 - 0.06 * warm);
+    this.fog.color.setRGB(0.82, 0.5 - 0.1 * warm, 0.34 - 0.1 * warm);
+    const U = this.domeMat.uniforms;
+    U.uSunCol.value.setRGB(1, 0.7 - 0.22 * warm, 0.36 - 0.2 * warm); U.uWarm.value = warm;
+    this.ringMat.color.setRGB(0.5 - 0.1 * warm, 0.34 - 0.08 * warm, 0.4 - 0.06 * warm);
+    this.warm = warm;
   }
-  update(camPos, focus) {
+  update(camPos, focus, moveShadow = true) {
     this.group.position.set(camPos.x, 0, camPos.z);
-    this.sunGlow.position.copy(this.dir).multiplyScalar(700);
-    this.sunDisc.position.copy(this.dir).multiplyScalar(690);
+    const U = this.domeMat.uniforms;
+    U.uSun.value.copy(this.dir); U.uFog.value.copy(this.fog.color); U.uSunK.value = this.sunDisc.visible ? 1 : 0;
+    // the shadow map is redrawn every other frame (game3d): its camera only moves on the frames it is drawn
+    if (!moveShadow) return;
     // The shadow camera follows the focus, snapped to whole shadow-map texels IN LIGHT SPACE (round 3). Round 2
-    // rounded the world x and z, but the shadow map's axes are the light's (the sun is low and 17 degrees off the
+    // rounded the world x and z, but the shadow map's axes are the light's (the sun is low and off the
     // road), so every step of a walk moved the map by a fraction of a texel and every shadow edge in view
     // shimmered: the "flicker while I'm walking". The basis is the one the shadow camera's lookAt builds
     // (z toward the sun, x = up x z, y = z x x); only the across-light coordinates are rounded.
@@ -127,10 +123,10 @@ export class Particles {
     this.n = 0;
   }
   emit(x, y, z, n, o = {}) {
-    const c = new THREE.Color(o.color ?? 0xd8b48a);
+    const c = new THREE.Color(o.color ?? 0xd8b48a); if (o.hdr) c.multiplyScalar(o.hdr);   // above 1.0: the glow pass picks the spark up
     for (let k = 0; k < n; k++) {
       const p = this.p[this.n]; this.n = (this.n + 1) % MAXP;
-      const a = Math.random() * Math.PI * 2, s = (o.speed ?? 2) * (0.4 + Math.random() * 0.8);
+      const a = Math.random() * Math.PI * 2, s = (o.speed ?? 2) * (o.ring ? 1 : 0.4 + Math.random() * 0.8);
       p.x = x + (Math.random() - 0.5) * (o.spread ?? 0.3); p.y = y + Math.random() * (o.spreadY ?? 0.1); p.z = z + (Math.random() - 0.5) * (o.spread ?? 0.3);
       p.vx = Math.cos(a) * s + (o.vx || 0); p.vz = Math.sin(a) * s + (o.vz || 0); p.vy = (o.up ?? 1.5) * (0.5 + Math.random());
       p.g = o.g ?? 6; p.life = p.max = (o.life ?? 0.6) * (0.6 + Math.random() * 0.7);
