@@ -34,7 +34,7 @@ export function onTap(el, fn) {
 export class UI {
   constructor() {
     this.toastT = 0;
-    this.subs = localStorage.getItem('saidi.subs') !== '0';
+    try { this.subs = localStorage.getItem('saidi.subs') !== '0'; } catch (e) { this.subs = true; }   // storage blocked (private mode): the game must still boot
     document.body.classList.toggle('nosubs', !this.subs);
     const how = $('how-list');
     how.innerHTML = HOWTO.map((h) => `<div class="item"><div class="k ar">${h.k}</div><div class="t"><span class="ar">${h.ar}</span><span class="en" dir="ltr">${h.en}</span></div></div>`).join('');
@@ -46,7 +46,7 @@ export class UI {
   }
   setLoad(p) { $('load-fill').style.width = Math.round(p * 100) + '%'; }
   setSubs(on) {
-    this.subs = on; localStorage.setItem('saidi.subs', on ? '1' : '0');
+    this.subs = on; try { localStorage.setItem('saidi.subs', on ? '1' : '0'); } catch (e) { /* storage blocked */ }
     document.body.classList.toggle('nosubs', !on);
     for (const id of ['btn-subs', 'btn-subs2']) $(id).textContent = on ? TXT.subsOn : TXT.subsOff;
   }

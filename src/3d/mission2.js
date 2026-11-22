@@ -513,7 +513,7 @@ export class Mission2 {
       [stars[1], 'سُكّرة رجعت والشمس لسه فاضل لها ' + num(STAR_SUN2) + ' ثانية', 'Sukkara home with ' + STAR_SUN2 + ' s of sun to spare'],
       [stars[2], 'المشوار كله من غير ولا إعادة، ومن غير ما تخسر أكتر من قلب', 'The whole run without a retry, losing at most one heart'],
     ];
-    g.showEnd(2, stars, rows, { countText: num(r.corn), countLabel: ['درة', 'Corn'], elapsed: r.elapsed, fails: r.fails });
+    g.showEnd(2, stars, rows, { countText: num(r.corn), countLabel: ['درة', 'Corn'], elapsed: r.elapsed, fails: r.fails, points: r.corn * 50 + r.timeLeft * 10 + r.helped.filter(Boolean).length * 200 });
   }
   // the dog's events (dog.js): sounds, the warning, the bite
   onDog(e) {

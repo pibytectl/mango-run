@@ -739,6 +739,6 @@ export class Mission3 {
       [stars[1], 'الأسبوع كله من غير ولا إعادة', 'The whole week without a retry'],
       [stars[2], 'ولا زبون زعلان، ولا جار استنى على الفاضي، والكشك ما اتكسرش', 'No angry customer, no neighbour left waiting, the kiosk never smashed'],
     ];
-    g.showEnd(3, stars, rows, { countText: num(r.respect), countLabel: ['الاحترام', 'Respect'], elapsed: r.elapsed, fails: r.fails });
+    g.showEnd(3, stars, rows, { countText: num(r.respect), countLabel: ['الاحترام', 'Respect'], elapsed: r.elapsed, fails: r.fails, points: r.respect * 20 });
   }
 }

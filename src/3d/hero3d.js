@@ -7,6 +7,8 @@ import { A } from './assets3d.js';
 import { Anim, twoBoneIK } from './anim.js';
 import { moveBody, fits } from './physics.js';
 import { rimFillModel } from './shade.js';
+import { costumeMaterial } from './npc.js';
+import { getCostume } from '../records.js';
 
 const G_UP = 22, G_DOWN = 30, JUMP_V = 7.6;
 const SPD = { walk: 2.0, run: 6.2, sprint: 8.8, air: 9, accel: 34, decel: 26 };
@@ -26,6 +28,9 @@ export class Hero {
     this.model = g.scene;
     this.model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
     rimFillModel(this.model, { fill: 0.12, rimK: 0.26 }, 'heroRim');
+    // a galabeya won with three stars (records.js); after the rim pass, because the recolour brings its own
+    const cos = getCostume();
+    if (cos.robe) { try { this.model.traverse((o) => { if (o.isSkinnedMesh && o.name !== 'Staff') o.material = costumeMaterial(o, cos); }); } catch (e) { console.warn('costume', e); } }
     this.root = new THREE.Group(); this.root.add(this.model); scene.add(this.root);
     this.anim = new Anim(this.model, A.clips.hero);
     this.bones = {}; this.model.traverse((o) => { if (o.isBone) this.bones[o.name] = o; });

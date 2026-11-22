@@ -52,7 +52,7 @@ function galabeyaMaterial(src, o, H) {
   if (galCache.has(key)) return galCache.get(key);
   const m = src.clone();
   const r = new THREE.Color(o.robe), w = new THREE.Color(o.wrap || 0x2c2723), hair = new THREE.Color(o.hair || 0x1c1814), st = new THREE.Color(o.stripe || 0xffffff);
-  const mode = { scarf: 0, kufi: 1, hair: 2 }[o.head || 'scarf'];
+  const mode = { scarf: 0, kufi: 1, hair: 2, own: 3 }[o.head || 'scarf'];   // own: Radwan's turban stays as it is (his galabeyas)
   m.onBeforeCompile = (sh) => {
     patchRimFill(sh, { fill: 0.1, rimK: 0.2 });
     sh.uniforms.uRobe = { value: new THREE.Vector3(r.r, r.g, r.b) };
@@ -79,10 +79,10 @@ function galabeyaMaterial(src, o, H) {
         diffuseColor.rgb = mix(c, rc * (0.32 + lum * 9.0), robe);
         // Radwan's grey shawl over the shoulder (light, unsaturated, below the neck) melts into the robe, so his
         // silhouette stays his own (the colour test runs on linear values: skin is far more saturated)
-        float shawl = body * smoothstep(0.07, 0.11, lum) * smoothstep(0.3, 0.16, sat);
+        float shawl = body * smoothstep(0.07, 0.11, lum) * smoothstep(0.3, 0.16, sat) * step(uHead.x, 2.5);   // Radwan keeps his shawl
         diffuseColor.rgb = mix(diffuseColor.rgb, rc * (0.62 + lum * 1.6), shawl);
         // head: the turban cloth (vTurb, from the vertices) becomes a dark wrap, a white cap over hair, or hair
-        float head = (1.0 - body) * clamp(vTurb, 0.0, 1.0);
+        float head = (1.0 - body) * clamp(vTurb, 0.0, 1.0) * step(uHead.x, 2.5);
         float folds = clamp(lum * 1.6, 0.35, 1.2);
         vec3 hc = uHead.x < 0.5 ? uWrap * folds * 1.1
           : uHead.x < 1.5 ? mix(uHair * (0.6 + 0.5 * lum), vec3(0.93, 0.92, 0.88) * folds, step(uHead.z, vObjY))
@@ -96,7 +96,7 @@ function galabeyaMaterial(src, o, H) {
         if (uHead.y > 1.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.17, 0.09) * (0.8 + lum * 3.0), beard * step(vObjY, uHead.w));
       }`);
   };
-  m.customProgramCacheKey = () => 'gal3';
+  m.customProgramCacheKey = () => 'gal4';
   galCache.set(key, m);
   return m;
 }
@@ -106,7 +106,7 @@ function galabeyaMaterial(src, o, H) {
 // in the bind pose, so the skinning still holds; nothing at the turban's lower edge moves, so no seams open).
 let headCache = null;
 function headInfo(mesh) {
-  if (headCache) return headCache;
+  if (headCache && headCache.geo === mesh.geometry) return headCache;   // per load: a second start parses the model again, and that geometry needs its own aTurb
   const geo = mesh.geometry, pos = geo.attributes.position, uv = geo.attributes.uv, n = pos.count;
   geo.computeBoundingBox();
   const bb = geo.boundingBox, top = bb.max.y, neckY = bb.min.y + (top - bb.min.y) * 0.835, hh = top - neckY;
@@ -141,9 +141,12 @@ function headInfo(mesh) {
   fp.needsUpdate = true; flat.computeBoundingBox(); flat.computeBoundingSphere();
   // the cap line (after squashing): the top ~40% of the head is the white kufi
   // the kufi: the top 45% of the squashed head; under it, hair
-  headCache = { neckY, flat, capY: yl + (top - yl) * 0.4 * 0.55, mouthY: neckY + hh * 0.22 };
+  headCache = { geo, neckY, flat, capY: yl + (top - yl) * 0.4 * 0.55, mouthY: neckY + hh * 0.22 };
   return headCache;
 }
+
+// Radwan in another galabeya (records.js COSTUMES): the townspeople's recolour on his own body, turban and shawl kept
+export function costumeMaterial(mesh, c) { return galabeyaMaterial(mesh.material, { robe: c.robe, stripe: c.stripe, head: 'own' }, headInfo(mesh)); }
 
 export class Npc {
   constructor(scene, phys, o = {}) {

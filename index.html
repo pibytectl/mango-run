@@ -87,26 +87,27 @@
           <span class="no disp">١</span>
           <b class="disp">مشوار المانجا</b>
           <em dir="ltr" class="ul">The Mango Run</em><em dir="ltr" class="lk"></em>
-          <span class="mstars" dir="ltr"><i></i><i></i><i></i></span>
+          <span class="mfoot" dir="ltr"><span class="mstars"><i></i><i></i><i></i></span><span class="mbest ar"></span></span>
         </button>
         <button class="mbtn mcard locked" id="btn-m2" data-m="2">
           <span class="thumb" style="background-image:url('assets/img/teaser_m2.webp')"></span><svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="5" y="10.5" width="14" height="10" rx="2.4" fill="currentColor"/></svg>
           <span class="no disp">٢</span>
           <b class="disp">الحمامة الهربانة</b>
           <em dir="ltr" class="ul">The Runaway Pigeon</em><em dir="ltr" class="lk">Finish Mission 1</em>
-          <span class="mstars" dir="ltr"><i></i><i></i><i></i></span>
+          <span class="mfoot" dir="ltr"><span class="mstars"><i></i><i></i><i></i></span><span class="mbest ar"></span></span>
         </button>
         <button class="mbtn mcard locked" id="btn-m3" data-m="3">
           <span class="thumb" style="background-image:url('assets/img/teaser_m3.webp')"></span><svg class="lock" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5V8a4.5 4.5 0 0 1 9 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="5" y="10.5" width="14" height="10" rx="2.4" fill="currentColor"/></svg>
           <span class="no disp">٣</span>
           <b class="disp">أسبوع في الكشك</b>
           <em dir="ltr" class="ul">A Week at Uncle's Kiosk</em><em dir="ltr" class="lk">Finish Mission 2</em>
-          <span class="mstars" dir="ltr"><i></i><i></i><i></i></span>
+          <span class="mfoot" dir="ltr"><span class="mstars"><i></i><i></i><i></i></span><span class="mbest ar"></span></span>
         </button>
       </div>
       <div class="row">
         <button class="pill ar" id="btn-sound">الصوت: شغّال</button>
         <button class="pill ar" id="btn-subs">ترجمة EN: شغّالة</button>
+        <button class="pill ar" id="btn-costume"></button>
         <button class="pill ar" id="btn-how">إزاي ألعب؟</button>
       </div>
     </div>
@@ -126,6 +127,7 @@
       <div class="ptitle disp ar">استراحة</div>
       <button class="big-btn ar" id="btn-resume">كمّل</button>
       <button class="pill wide ar" id="btn-restart-cp">ابدأ من آخر نقطة</button>
+      <button class="pill wide ar" id="btn-restart-run">ابدأ المهمة من الأول</button>
       <div class="row">
         <button class="pill ar" id="btn-sound2">الصوت: شغّال</button>
         <button class="pill ar" id="btn-subs2">ترجمة EN: شغّالة</button>
@@ -141,6 +143,7 @@
       <div class="ar body" id="fail-body"></div>
       <div class="en small" id="fail-body-en" dir="ltr"></div>
       <button class="big-btn ar" id="btn-retry">كمّل من آخر نقطة</button>
+      <button class="pill ar" id="btn-fail-restart">ابدأ المهمة من الأول</button>
     </div>
   </div>
 
@@ -154,7 +157,9 @@
           <div><b class="ar" id="end-mangoes"></b><span class="ar" id="end-count-ar">مانجا</span><em class="en" dir="ltr" id="end-count-en">Mangoes</em></div>
           <div><b class="ar" id="end-time"></b><span class="ar">الوقت</span><em class="en" dir="ltr">Time</em></div>
           <div class="only3d"><b class="ar" id="end-fights"></b><span class="ar">الإعادات</span><em class="en" dir="ltr">Retries</em></div>
+          <div class="score"><b class="ar" id="end-score"></b><span class="ar">النقط</span><em class="en" dir="ltr">Score</em><i class="ar hidden" id="end-newbest">رقم جديد!</i></div>
         </div>
+        <div class="end-best"><span class="ar" id="end-best-ar"></span><em class="en" dir="ltr" id="end-best-en"></em></div>
         <div id="end-checks" class="only3d"></div>
         <div class="ar rank" id="end-rank"></div>
         <div class="en small" id="end-rank-en" dir="ltr"></div>

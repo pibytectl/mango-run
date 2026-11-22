@@ -7,6 +7,8 @@
 //                   the pick only once the one before is finished, remembered in localStorage; Mission 3: ?seg3d=d1..d5)
 import * as THREE from '../vendor/three.module.min.js';
 import { UI, onTap } from './ui.js';
+import { getRec, getCostume, nextCostume, COSTUMES, costumeOpen } from './records.js';
+import { num } from './strings.js';
 import { audioInit, audioSuspend, audioWake, audioDebug, loadMusic, playMusic, setSound, soundOn, sfx } from './audio.js';
 
 const Q = new URLSearchParams(location.search);
@@ -21,7 +23,18 @@ function refreshStars() {
     let n = 0; try { n = +localStorage.getItem('saidi.best.' + c.dataset.m) || 0; } catch (e) { n = 0; }
     c.querySelectorAll('.mstars i').forEach((s, i) => s.classList.toggle('on', i < n));
     c.classList.toggle('played', n > 0);
+    const r = getRec(+c.dataset.m), b = c.querySelector('.mbest');
+    if (b) b.textContent = r.score ? num(r.score) : '';
   }
+  refreshCostume();
+}
+// the galabeya pill: cycles through the ones opened by three-star runs; with none open it says how to open one
+function refreshCostume(pulse) {
+  const b = document.getElementById('btn-costume'), open = COSTUMES.filter(costumeOpen).length;
+  b.textContent = open > 1 ? 'الجلابية: ' + getCostume().ar : 'جلابية جديدة: ٣ نجوم';
+  b.classList.toggle('lockedpill', open < 2);
+  b.title = open > 1 ? 'Galabeya: ' + getCostume().en : 'Three stars on a mission unlock a new galabeya';
+  if (pulse) { b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); }
 }
 // A phone or tablet: the primary pointer is coarse. A touchscreen laptop has touch too, but its primary
 // pointer is fine (mouse or touchpad): it starts with mouse/keyboard controls (round 3: Mzee's laptop showed
@@ -134,9 +147,21 @@ const on = (id, fn) => onTap(document.getElementById(id), (e) => { e.stopPropaga
 on('btn-start3d', () => start3D(1));
 for (const n of [2, 3]) on('btn-m' + n, () => { if (unlocked() >= n) start3D(n); else { const b = document.getElementById('btn-m' + n); b.classList.remove('nudge'); void b.offsetWidth; b.classList.add('nudge'); } });
 on('btn-next', () => start3D(Math.min(3, (+document.body.dataset.endm || 1) + 1)));
+on('btn-costume', () => { if (COSTUMES.filter(costumeOpen).length > 1) nextCostume(); refreshCostume(true); });
+// "restart the mission" asks for a second tap within 3 s: it throws the run away
+const confirmTap = (id, fn) => {
+  const b = document.getElementById(id), label = b.textContent; let t = 0;
+  on(id, () => {
+    if (b.dataset.sure) { clearTimeout(t); delete b.dataset.sure; b.textContent = label; fn(); return; }
+    b.dataset.sure = '1'; b.textContent = 'متأكد؟ دوس تاني';
+    t = setTimeout(() => { delete b.dataset.sure; b.textContent = label; }, 3000);
+  });
+};
+confirmTap('btn-restart-run', () => in3D() && g3.restartRun());
+on('btn-fail-restart', () => in3D() && g3.restartRun());
 on('btn-how', () => { ui.screen('screen-how'); });
 on('btn-how-close', () => { ui.screen('screen-title'); });
-const toggleSound = () => { setSound(!soundOn()); ui.setSoundLabel(soundOn()); localStorage.setItem('saidi.sound', soundOn() ? '1' : '0'); };
+const toggleSound = () => { setSound(!soundOn()); ui.setSoundLabel(soundOn()); try { localStorage.setItem('saidi.sound', soundOn() ? '1' : '0'); } catch (e) { /* storage blocked */ } };
 on('btn-sound', toggleSound); on('btn-sound2', toggleSound);
 const toggleSubs = () => ui.setSubs(!ui.subs);
 on('btn-subs', toggleSubs); on('btn-subs2', toggleSubs);
@@ -147,7 +172,7 @@ on('btn-menu', () => toTitle());
 on('btn-menu2', () => toTitle());
 on('btn-retry', () => in3D() && g3.retry());
 on('btn-again', () => in3D() && g3.again());
-if (localStorage.getItem('saidi.sound') === '0') setSound(false);
+try { if (localStorage.getItem('saidi.sound') === '0') setSound(false); } catch (e) { /* storage blocked */ }
 ui.setSoundLabel(soundOn()); ui.setSubs(ui.subs);
 
 // Esc or P: pause / resume

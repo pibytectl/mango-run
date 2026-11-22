@@ -22,6 +22,7 @@ import { Mission2, LIMIT2, SEG2 } from './mission2.js';
 import { Mission3, LIMIT3, SEG3 } from './mission3.js';
 import { sfx, playMusic, setMusicRate, loadMusic, audioInit, loadAmbient, setAmbient } from '../audio.js';
 import { num, clock } from '../strings.js';
+import { saveRun } from '../records.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = (id) => document.getElementById(id);
@@ -1479,7 +1480,7 @@ class Game3D {
       [stars[1], 'وصلت والشمس لسه فاضل لها دقيقة وربع', 'Made it with a minute and a quarter of sun to spare'],
       [stars[2], 'المشوار كله من غير ولا إعادة، ومن غير ما تخسر أكتر من قلب', 'The whole run without a retry, losing at most one heart'],
     ];
-    this.showEnd(1, stars, rows, { countText: num(r.mangoes) + ' من ' + num(12), countLabel: ['مانجا', 'Mangoes'], elapsed: r.elapsed, fails: r.fails });
+    this.showEnd(1, stars, rows, { countText: num(r.mangoes) + ' من ' + num(12), countLabel: ['مانجا', 'Mangoes'], elapsed: r.elapsed, fails: r.fails, points: r.mangoes * 50 + r.timeLeft * 10 });
   }
   // the end screen of either mission: stars, what each one was for, the stats, a rank; finishing a mission
   // unlocks the next (localStorage, with a safe fallback when storage is blocked)
@@ -1515,7 +1516,22 @@ class Game3D {
     for (let i = 0; i < n; i++) setTimeout(() => sfx.star(i), 350 * i + 200);
     let unlocked = 1;
     try { unlocked = Math.max(+localStorage.getItem('saidi.unlocked') || 1, mission + 1); localStorage.setItem('saidi.unlocked', String(unlocked)); } catch (e) { unlocked = mission + 1; }
-    try { localStorage.setItem('saidi.best.' + mission, String(Math.max(n, +localStorage.getItem('saidi.best.' + mission) || 0))); } catch (e) { /* storage blocked */ }
+    // The score: 500 for finishing, 1000 a star, the mission's own points (what was delivered, the sun left, the
+    // respect earned), less 150 a retry. It and the time are kept as records (records.js); a first three-star
+    // run on a mission opens a galabeya.
+    const score = Math.max(100, Math.round(500 + n * 1000 + (o.points || 0) - o.fails * 150));
+    const S = saveRun(mission, { score, time: o.elapsed, stars });
+    $('end-score').textContent = num(score);
+    $('end-newbest').classList.toggle('hidden', !(S.newScore || S.newTime));
+    $('end-newbest').textContent = S.newScore ? 'رقم جديد!' : 'أسرع وقت!';
+    const bt = Math.ceil(S.rec.time);
+    $('end-best-ar').textContent = S.first ? 'أول مرة تخلّصها. العب تاني وعلّي الرقم!' : 'أحسن رقم ' + num(S.rec.score) + ' · أسرع وقت ' + clock(S.rec.time);
+    $('end-best-en').textContent = S.first ? 'First finish. Play again and beat it!' : 'Best ' + S.rec.score + ' · fastest ' + Math.floor(bt / 60) + ':' + String(bt % 60).padStart(2, '0') + ' · ' + S.rec.runs + ' runs';
+    // a goal met on an earlier run but missed on this one keeps a hollow star
+    [...document.querySelectorAll('#end-checks .chk')].forEach((el, i) => el.classList.toggle('had', !stars[i] && S.prev.goals[i]));
+    if (S.costume) { $('end-rank').textContent = 'اتفتحت جلابية جديدة: ' + S.costume.ar + '! اختارها من القائمة.'; $('end-rank-en').textContent = 'New galabeya unlocked: ' + S.costume.en + '! Pick it on the menu.'; }
+    if (S.newScore || S.newTime || S.costume) setTimeout(() => sfx.win(), 350 * n + 500);
+    this.result = { ...(this.result || {}), score, newBest: S.newScore, newTime: S.newTime };
     document.body.dataset.endm = String(mission);
     $('btn-next').classList.toggle('hidden', !(mission < 3 && unlocked >= mission + 1));
     $('btn-next').textContent = 'العب المهمة ' + num(mission + 1);
@@ -1551,10 +1567,22 @@ class Game3D {
     if (this.auto) setTimeout(() => this.retry(), 800);
   }
   retry() { this.ui.screen(null); this.state = 'play'; this.restoreCp(true); }
-  pause() { if (this.state !== 'play') return; this.state = 'paused'; this.ui.screen('screen-pause'); clearInput3D(); I3.enabled = false; this.voice.stop(); this.engine.mute(true); }
+  pause() {
+    if (this.state !== 'play') return; this.state = 'paused'; this.ui.screen('screen-pause');
+    // no restart (checkpoint or mission) from inside a cutscene: its script would go on over the restarted run
+    for (const id of ['btn-restart-cp', 'btn-restart-run']) $(id).classList.toggle('hidden', this.mode === 'cut');
+    clearInput3D(); I3.enabled = false; this.voice.stop(); this.engine.mute(true); }
   resume() { if (this.state !== 'paused') return; audioInit('resume'); this.engine.mute(false); this.ui.screen(null); this.state = 'play'; I3.enabled = this.mode === 'play'; clearInput3D(); this.last = performance.now(); }
   restartCp() { this.ui.screen(null); this.state = 'play'; this.fails++; this.restoreCp(true); }
   again() { this.ui.screen(null); this.state = 'play'; this.resetRun(); if (this.m2) { this.m2.t1 = this.m2.t2 = this.m2.t3 = null; } if (this.m3) this.m3.resetWeek(); this.cp = this.defaultCp(this.m2 ? 'start' : this.m3 ? 'd1' : 'street'); this.restoreCp(); }
+  // the whole mission again from its first checkpoint, from the pause menu or the fail screen (a star hunter's
+  // retry: a checkpoint retry already costs the third star)
+  restartRun() {
+    if (!['paused', 'fail', 'end'].includes(this.state) || this.mode === 'cut') return;
+    if (this.state === 'paused') { audioInit('resume'); this.engine.mute(false); clearInput3D(); this.last = performance.now(); }
+    this.log('restart-run', { from: this.state, seg: this.seg });
+    this.again();
+  }
   onDog(e) { if (this.m2) this.m2.onDog(e); if (this.m3) this.m3.onDog(e); }
   // the tahtib fight: Mission 1's alley, or Mission 3's Day 4 at the kiosk
   inFight() { return this.seg === 'fight' || !!(this.m3 && this.m3.fighting); }
