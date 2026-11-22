@@ -606,3 +606,12 @@ body[data-screen="fail"] #subs3d, body[data-screen="end"] #subs3d, body[data-scr
   .stats div { min-width: 64px; padding: 1px 6px 3px; }
   body.mode3d .end-main .rank { font-size: 15px; }
 }
+@media (max-height: 430px) { #screen-title .row .pill { margin: 3px 2px; padding: 4px 10px 5px; font-size: 13px !important; } }
+.recs { display: none; }
+body[data-endm="3"] .recs { display: block; } body[data-endm="3"] .end-next > .next-h { display: none; }
+.recs .rec { display: grid; grid-template-columns: 1fr auto 5em 3.2em; gap: 10px; align-items: center; padding: 5px 12px; margin: 4px 0; border-radius: 12px; background: rgba(14, 9, 34, 0.5); border: 1px solid rgba(255, 205, 130, 0.25); }
+.recs .rec span.ar { font-weight: 800; font-size: 15px; } .recs .rec .mstars { margin: 0; }
+.recs .rec b { font-size: 17px; color: var(--gold2); text-align: left; } .recs .rec em { font-style: normal; font-size: 12px; opacity: 0.8; text-align: left; }
+.recs .rec.sum { border-color: rgba(255, 205, 130, 0.6); }
+.recs .rec-tip { font-size: 12px; text-align: center; opacity: 0.85; } .recs .rec-tip.en { font-size: 10px; }
+@media (max-height: 430px) { .recs .rec { padding: 2px 10px; margin: 3px 0; } .recs .rec span.ar { font-size: 13px; } }

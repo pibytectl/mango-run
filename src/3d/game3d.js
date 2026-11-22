@@ -22,7 +22,7 @@ import { Mission2, LIMIT2, SEG2 } from './mission2.js';
 import { Mission3, LIMIT3, SEG3 } from './mission3.js';
 import { sfx, playMusic, setMusicRate, loadMusic, audioInit, loadAmbient, setAmbient } from '../audio.js';
 import { num, clock } from '../strings.js';
-import { saveRun } from '../records.js';
+import { saveRun, getRec, bestStars } from '../records.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const $ = (id) => document.getElementById(id);
@@ -1532,6 +1532,15 @@ class Game3D {
     if (S.costume) { $('end-rank').textContent = 'اتفتحت جلابية جديدة: ' + S.costume.ar + '! اختارها من القائمة.'; $('end-rank-en').textContent = 'New galabeya unlocked: ' + S.costume.en + '! Pick it on the menu.'; }
     if (S.newScore || S.newTime || S.costume) setTimeout(() => sfx.win(), 350 * n + 500);
     this.result = { ...(this.result || {}), score, newBest: S.newScore, newTime: S.newTime };
+    // after the last mission nothing is "next": the three missions' records take that place, with what is still open
+    if (mission === 3) {
+      const names = [['مشوار المانجا', 'The Mango Run'], ['الحمامة الهربانة', 'The Runaway Pigeon'], ['أسبوع في الكشك', 'A Week at the Kiosk']];
+      let total = 0, st = 0;
+      const rowsHtml = names.map(([a, e], i) => { const r = getRec(i + 1), b = bestStars(i + 1); total += r.score; st += b;
+        return `<div class="rec"><span class="ar">${a}</span><span class="mstars" dir="ltr">${[0, 1, 2].map((k) => `<i class="${k < b ? 'on' : ''}"></i>`).join('')}</span><b class="ar">${r.score ? num(r.score) : '·'}</b><em class="ar">${r.time ? clock(r.time) : ''}</em></div>`; }).join('');
+      $('end-recs').innerHTML = `<div class="ar next-h">أرقامك</div>${rowsHtml}<div class="rec sum"><span class="ar">المجموع</span><span class="ar">${num(st)} من ${num(9)} نجوم</span><b class="ar">${num(total)}</b><em></em></div>`
+        + `<div class="ar rec-tip">${st < 9 ? 'لسه فيه نجوم ناقصة: كل تلات نجوم في مهمة بيفتحوا جلابية.' : 'كل النجوم معاك. حاول تكسر أرقامك!'}</div><div class="en rec-tip" dir="ltr">${st < 9 ? 'Stars still open: three on a mission unlock a galabeya.' : 'Every star is yours. Now beat your own records!'}</div>`;
+    }
     document.body.dataset.endm = String(mission);
     $('btn-next').classList.toggle('hidden', !(mission < 3 && unlocked >= mission + 1));
     $('btn-next').textContent = 'العب المهمة ' + num(mission + 1);
