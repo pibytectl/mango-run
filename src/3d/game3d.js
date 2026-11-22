@@ -428,13 +428,14 @@ class Game3D {
     // moves on those frames, so the shadows never slide. A camera cut redraws it at once.
     const R = this.renderer; this.frameN++;
     const cut = this._shFocus ? Math.hypot(focus.x - this._shFocus.x, focus.z - this._shFocus.z) > 6 : true;
-    const sh = cut || (this.frameN & 1) === 0 || this.shadowEvery;
+    const sh = cut || this.frameN % (this.shadowSkip || 2) === 0 || this.shadowEvery;
     if (sh) (this._shFocus || (this._shFocus = V(0, 0, 0))).copy(focus);
     R.shadowMap.autoUpdate = false; R.shadowMap.needsUpdate = sh;
     this.sky.update(this.camera.position, focus, sh);
     // static town chunks beyond ~270 m are lost in the haze (FogExp2 0.0078 is ~99% fog at 270 m): skip them
     const cp = this.camera.position;
     for (const m of this.level.meshes) { const b = m.geometry.boundingSphere; m.visible = Math.hypot(b.center.x - cp.x, b.center.z - cp.z) - b.radius < 270; }
+    for (const m of this.level.inst) { const b = m.boundingSphere; m.visible = Math.hypot(b.center.x - cp.x, b.center.z - cp.z) - b.radius < 270; }
     this.level.nile.material.uniforms.uTime.value += dt;
     this.level.nile.material.uniforms.uSun.value.copy(this.sky.dir);
     this.level.nile.material.uniforms.uFogCol.value.copy(this.sky.fog.color);
@@ -448,7 +449,7 @@ class Game3D {
         else if (this.hero.sprinting) want = 0.3;
       }
       P.speed += (want - P.speed) * Math.min(1, dt * (want > P.speed ? 5 : 3));
-      P.look.rays = this.sky.sunDisc.visible ? 1 : 0;
+      P.look.rays = this.sky.sunDisc.visible && !(this.tier >= 1) ? 1 : 0;
     }
     this.draw(dt);
     this.ui.tickToast(dt);
@@ -479,8 +480,23 @@ class Game3D {
       if (this.slow >= 2 && cur > 0.75 && cool > 3) { this.pendingDpr = Math.max(0.75, cur - 0.08); this.slow = 0; this.dprAt = now; this.dprChanges++; }
       else if (this.fast >= 6 && cur < 1 && cool > 20) { this.pendingDpr = Math.min(1, cur + 0.08); this.fast = 0; this.dprAt = now; this.dprChanges++; }
     }
+    // Quality tiers for a phone that is still slow at the lowest resolution (the scaler above stops at 0.75).
+    // Tier 1 (under 27 fps for 3 s): the shadow map is redrawn every third frame and the sun shafts go.
+    // Tier 2 (under 22 fps for 4 s more): every fourth frame, and the scene target loses its 4x multisampling.
+    // A phone held at 30 fps by Low Power Mode never gets here. One way only: no flip-flopping.
+    if (!this.lockQuality && (this.tier || 0) < 2 && (this.dprChanges >= 4 || cur <= 0.76) && !this.pendingDpr) {
+      const lim = this.tier ? 22 : 27, need = this.tier ? 4 : 3;
+      this.vslow = fps < lim ? (this.vslow || 0) + 1 : 0;
+      if (this.vslow >= need) this.setTier((this.tier || 0) + 1);
+    }
     const f = $('fps');
-    if (this.auto || new URLSearchParams(location.search).has('fps')) { f.classList.remove('hidden'); f.textContent = `${Math.round(fps)} fps · dpr ${this.renderer.getPixelRatio().toFixed(2)} · ${this.seg} · z ${this.hero.pos.z.toFixed(0)} · calls ${this.stats.calls}`; }
+    if (this.auto || new URLSearchParams(location.search).has('fps')) { f.classList.remove('hidden'); f.textContent = `${Math.round(fps)} fps · dpr ${this.renderer.getPixelRatio().toFixed(2)} · ${this.seg} · z ${this.hero.pos.z.toFixed(0)} · calls ${this.stats.calls} · q${this.tier || 0}`; }
+  }
+
+  setTier(n) {
+    this.tier = n; this.vslow = 0; this.shadowSkip = n >= 2 ? 4 : n === 1 ? 3 : 2;
+    if (this.post && n >= 2 && this.post.scene.samples) { this.post.scene.samples = 0; this.post.scene.dispose(); }   // rebuilt without MSAA on its next use
+    this.log('quality tier', n);
   }
 
   // ================================================================== HUD + world UI

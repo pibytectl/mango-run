@@ -85,6 +85,28 @@ function toTitle() {
   if (g3) { g3.exit(); g3 = null; }
   state = 'title'; ui.screen('screen-title'); ui.show('hud', false); ui.clearWorld(); refreshMissions(); refreshStars();
   playMusic('title', 0.55);
+  warmUp();
+}
+
+// While the player reads the title screen: fetch the 3D code and the files of the mission he will most likely
+// start (the newest one unlocked), two at a time, into the browser cache. Play then starts from the cache and not
+// from the network (~10 MB). Not on a data-saver connection, not in test starts, once per mission.
+const warmed = new Set();
+function warmUp() {
+  if (DEBUG_AUTO3D || Q.has('seg3d')) return;
+  const c = navigator.connection;
+  if (c && (c.saveData || /2g/.test(c.effectiveType || ''))) return;
+  const m = unlocked();
+  if (warmed.has(m)) return; warmed.add(m);
+  setTimeout(async () => {
+    try {
+      const { assetUrls } = await import('./3d/assets3d.js');
+      import('./3d/game3d.js').catch(() => {});
+      const list = assetUrls(m); let i = 0;
+      const next = () => { if (state !== 'title' || i >= list.length) return; fetch(list[i++]).then((r) => r.arrayBuffer()).catch(() => {}).then(next); };
+      next(); next();
+    } catch (e) { /* only a head start */ }
+  }, 1200);
 }
 
 // first gesture: audio, fullscreen, landscape lock

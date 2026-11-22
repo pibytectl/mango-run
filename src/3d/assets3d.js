@@ -57,6 +57,13 @@ const TEX = {
   kiosk_goods: 0, fridge: 0, sky: 0, skyline: 0, laundry: 0,
 };
 
+// every file a mission waits for before it starts (the title screen warms the browser cache with these)
+export function assetUrls(mission = 1) {
+  return [...(MODELS_FOR[mission] || MODELS).map((m) => BASE + m + '.glb'),
+    ...Object.values(CHARS).filter((c) => !c.m || c.m.includes(mission)).map((c) => BASE + c.file),
+    ...Object.keys(TEX).map((t) => BASE + 'tex/' + t + '.webp')];
+}
+
 export async function loadAssets3D(onProgress, maxAniso = 4, mission = 1) {
   const models = MODELS_FOR[mission] || MODELS, chars = Object.entries(CHARS).filter(([, c]) => !c.m || c.m.includes(mission));
   const loader = new GLTFLoader();

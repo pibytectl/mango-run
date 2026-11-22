@@ -95,7 +95,7 @@ export class Level {
       this.instanced();
       this.wiresMesh();
       this.nile = makeNile(); this.nile.position.z = -70; this.root.add(this.nile);   // the course runs 70 m further west
-      return this;
+      this.chunkInstances(); return this;
     }
     // Mission 3: uncle Fathy's street (level3.js); his name on the kiosk banner
     if (mission === 3) {
@@ -108,7 +108,7 @@ export class Level {
       this.marketInstances();
       this.wiresMesh();
       this.nile = makeNile(); this.nile.position.z = -70; this.root.add(this.nile);
-      return this;
+      this.chunkInstances(); return this;
     }
     this.ground();
     this.plaza();
@@ -125,7 +125,7 @@ export class Level {
     this.instanced();
     this.marketInstances();
     this.wiresMesh();
-    return this;
+    this.chunkInstances(); return this;
   }
 
   // ------------------------------------------------------------------ helpers
@@ -1023,6 +1023,28 @@ export class Level {
     const m = new THREE.Mesh(mergeGeometries(parts), this.mats.paint);
     m.position.set(x, 0, z); m.castShadow = true; this.root.add(m);
     this.col(x - 0.85, 0, z - 0.45, x + 0.85, 1.0, z + 0.55, { kind: 'teacart', vault: true });
+  }
+
+  // Every big instanced set (dishes, tanks, AC units, fruit, bulbs) was ONE draw over the whole map: its bounding
+  // sphere covers the town, so nothing was ever culled and all of it went through the shadow pass too (Mission 1:
+  // 390 dishes = 327,000 triangles a pass, a third of the frame). Split each set into 60 m slices along the route:
+  // the frustum, the shadow camera and the haze cut-off (game3d: 270 m) now drop the slices out of view.
+  chunkInstances(len = 60) {
+    this.inst = [];
+    const M = new THREE.Matrix4(), col = new THREE.Color();
+    for (const im of this.root.children.filter((o) => o.isInstancedMesh && o.frustumCulled && o.count > 24)) {
+      const groups = new Map();
+      for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, M); const k = Math.floor(M.elements[14] / len); (groups.get(k) || groups.set(k, []).get(k)).push(i); }
+      if (groups.size < 2) { this.inst.push(im); continue; }
+      for (const ids of groups.values()) {
+        const part = new THREE.InstancedMesh(im.geometry, im.material, ids.length);
+        ids.forEach((id, j) => { im.getMatrixAt(id, M); part.setMatrixAt(j, M); if (im.instanceColor) { im.getColorAt(id, col); part.setColorAt(j, col); } });
+        part.castShadow = im.castShadow; part.receiveShadow = im.receiveShadow; part.name = im.name;
+        part.instanceMatrix.needsUpdate = true; if (part.instanceColor) part.instanceColor.needsUpdate = true;
+        part.computeBoundingSphere(); this.root.add(part); this.inst.push(part);
+      }
+      this.root.remove(im); im.dispose();
+    }
   }
 
   instanced() {
